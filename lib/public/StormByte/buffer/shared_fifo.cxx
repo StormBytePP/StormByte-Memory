@@ -1,0 +1,112 @@
+#include <StormByte/buffer/shared_fifo.hxx>
+
+using namespace StormByte::Buffer;
+
+std::size_t SharedFIFO::Capacity() const noexcept {
+    std::scoped_lock<std::mutex> lock(m_mutex);
+    return FIFO::Capacity();
+}
+
+void SharedFIFO::Clear() noexcept {
+    {
+        std::scoped_lock<std::mutex> lock(m_mutex);
+        FIFO::Clear();
+    }
+    m_cv.notify_all();
+}
+
+void SharedFIFO::Reserve(std::size_t newCapacity) {
+    std::scoped_lock<std::mutex> lock(m_mutex);
+    FIFO::Reserve(newCapacity);
+}
+
+void SharedFIFO::Write(const std::vector<std::byte>& data) {
+    {
+        std::scoped_lock<std::mutex> lock(m_mutex);
+        if (m_closed.load() || data.empty()) {
+            // noop
+        } else {
+            const std::size_t count = data.size();
+            const std::size_t required = m_size.load() + count;
+            if (required > m_buffer.size()) {
+                std::size_t newCap = m_buffer.empty() ? 64 : m_buffer.size();
+                while (newCap < required) newCap *= 2;
+                // Ensure we call base Reserve without re-entering our override
+                FIFO::Reserve(newCap);
+            }
+            // With capacity ensured, delegate to base write (won't re-enter Reserve)
+            FIFO::Write(data);
+        }
+    }
+    m_cv.notify_all();
+}
+
+void SharedFIFO::Write(const std::string& data) {
+    {
+        std::scoped_lock<std::mutex> lock(m_mutex);
+        if (data.empty() || m_closed.load()) {
+            // mirror base behavior: noop on closed or empty
+        } else {
+            std::vector<std::byte> tmp;
+            tmp.resize(data.size());
+            std::copy_n(reinterpret_cast<const std::byte*>(data.data()), data.size(), tmp.begin());
+            const std::size_t count = tmp.size();
+            const std::size_t required = m_size.load() + count;
+            if (required > m_buffer.size()) {
+                std::size_t newCap = m_buffer.empty() ? 64 : m_buffer.size();
+                while (newCap < required) newCap *= 2;
+                FIFO::Reserve(newCap);
+            }
+            FIFO::Write(tmp);
+        }
+    }
+    m_cv.notify_all();
+}
+
+std::vector<std::byte> SharedFIFO::Read(std::size_t count) {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    if (count != 0) {
+        Wait(count, lock);
+    }
+    return FIFO::Read(count);
+}
+
+std::vector<std::byte> SharedFIFO::Extract(std::size_t count) {
+    std::vector<std::byte> out;
+    {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        if (count != 0) {
+            Wait(count, lock);
+        }
+        out = FIFO::Extract(count);
+        lock.unlock();
+    }
+    if (!out.empty()) m_cv.notify_all();
+    return out;
+}
+
+void SharedFIFO::Seek(const std::size_t& position, const Position& mode) {
+    {
+        std::scoped_lock<std::mutex> lock(m_mutex);
+        FIFO::Seek(position, mode);
+    }
+    m_cv.notify_all();
+}
+
+void SharedFIFO::Close() noexcept {
+    {
+        std::scoped_lock<std::mutex> lock(m_mutex);
+        m_closed.store(true);
+    }
+    m_cv.notify_all();
+}
+
+void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) {
+    if (n == 0) return;
+    m_cv.wait(lock, [&] {
+        if (m_closed.load()) return true;
+        const std::size_t sz = m_size.load();
+        const std::size_t rp = m_read_position.load();
+        return sz >= rp + n; // at least n bytes available from current read position
+    });
+}
