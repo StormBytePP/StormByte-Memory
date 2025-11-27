@@ -89,24 +89,6 @@ void FIFO::Write(const std::vector<std::byte>& data) {
 	m_size += count;
 }
 
-void FIFO::Write(std::vector<std::byte>&& data) noexcept {
-	if (m_closed.load()) return;
-	const std::size_t count = data.size();
-	if (count == 0) return;
-	if (m_size == 0) {
-		// Adopt storage wholesale for zero-copy when empty
-		m_buffer.clear();
-		m_buffer.shrink_to_fit();
-		m_buffer = std::move(data);
-		m_head = 0;
-		m_size = count;
-		m_tail = m_size % m_buffer.size();
-		return;
-	}
-	// Otherwise, fall back to regular write (wrap-aware, at most two copies)
-	Write(static_cast<const std::vector<std::byte>&>(data));
-}
-
 void FIFO::Write(const std::string& data) {
 	if (m_closed.load()) return;
 	if (data.empty()) return;

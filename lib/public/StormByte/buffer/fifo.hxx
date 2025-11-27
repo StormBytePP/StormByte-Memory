@@ -104,18 +104,12 @@ namespace StormByte::Buffer {
 			 *  @param data Byte vector to append to the FIFO.
 			 */
 			virtual void Write(const std::vector<std::byte>& data);
-			
-			/**
-			 * 	@brief Write bytes from an rvalue vector; adopts storage when empty.
-			 *  @param data Byte vector to append; may be moved into the FIFO.
-			 */
-			virtual void Write(std::vector<std::byte>&& data) noexcept;
 
 			/**
 			 * 	@brief Convenience write from string (bytes copied from string data).
 			 *  @param data String whose bytes will be written into the FIFO.
 			 */
-			virtual void Write(const std::string& data);
+			void Write(const std::string& data);
 
 			/**
 			 * 	@brief Non-destructive read up to @p count bytes from current read position.
@@ -125,7 +119,7 @@ namespace StormByte::Buffer {
 			 *        read again by resetting the read position. The internal read position
 			 *        is advanced by the number of bytes read. Use @ref Extract() for
 			 *        destructive reads that remove data from the buffer.
-			 *  @see Extract(), ResetReadPosition()
+			 *  @see Extract()
 			 */
 			virtual std::vector<std::byte> Read(std::size_t count = 0);
 
