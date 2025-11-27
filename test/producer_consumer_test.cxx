@@ -51,17 +51,6 @@ using StormByte::Buffer::Producer;
 using StormByte::Buffer::Consumer;
 using StormByte::Buffer::Position;
 
-static std::string toString(const std::vector<std::byte>& v) {
-    return StormByte::String::FromByteVector(v);
-}
-
-static std::vector<std::byte> toBytes(const std::string& s) {
-    std::vector<std::byte> result(s.size());
-    std::transform(s.begin(), s.end(), result.begin(), 
-                   [](char c) { return static_cast<std::byte>(c); });
-    return result;
-}
-
 int test_producer_consumer_basic_write_read() {
     Producer producer;
     auto consumer = producer.Consumer();
@@ -74,7 +63,7 @@ int test_producer_consumer_basic_write_read() {
     ASSERT_FALSE("not empty", consumer.Empty());
 
     auto data = consumer.Read(message.size());
-    ASSERT_EQUAL("content matches", toString(*data), message);
+    ASSERT_EQUAL("content matches", StormByte::String::FromByteVector(*data), message);
 
     RETURN_TEST("test_producer_consumer_basic_write_read", 0);
 }
@@ -88,7 +77,7 @@ int test_producer_consumer_multiple_writes() {
     producer.Write("Third");
 
     auto all = consumer.Read(0);
-    ASSERT_EQUAL("concatenated content", toString(*all), std::string("FirstSecondThird"));
+    ASSERT_EQUAL("concatenated content", StormByte::String::FromByteVector(*all), std::string("FirstSecondThird"));
 
     RETURN_TEST("test_producer_consumer_multiple_writes", 0);
 }
@@ -101,11 +90,11 @@ int test_producer_consumer_extract() {
     ASSERT_EQUAL("initial size", consumer.Size(), static_cast<std::size_t>(8));
 
     auto first = consumer.Extract(3);
-    ASSERT_EQUAL("extracted ABC", toString(*first), std::string("ABC"));
+    ASSERT_EQUAL("extracted ABC", StormByte::String::FromByteVector(*first), std::string("ABC"));
     ASSERT_EQUAL("size after extract", consumer.Size(), static_cast<std::size_t>(5));
 
     auto rest = consumer.Extract(0);
-    ASSERT_EQUAL("rest is DEFGH", toString(*rest), std::string("DEFGH"));
+    ASSERT_EQUAL("rest is DEFGH", StormByte::String::FromByteVector(*rest), std::string("DEFGH"));
     ASSERT_TRUE("empty after extract all", consumer.Empty());
 
     RETURN_TEST("test_producer_consumer_extract", 0);
@@ -137,16 +126,16 @@ int test_producer_consumer_seek_operations() {
 
     consumer.Seek(5, Position::Absolute);
     auto from5 = consumer.Read(3);
-    ASSERT_EQUAL("read from pos 5", toString(*from5), std::string("567"));
+    ASSERT_EQUAL("read from pos 5", StormByte::String::FromByteVector(*from5), std::string("567"));
 
     // After reading 3 bytes, position is at 8, relative +2 goes to 10 (end)
     consumer.Seek(0, Position::Absolute);
     auto fromStart = consumer.Read(4);
-    ASSERT_EQUAL("read from start", toString(*fromStart), std::string("0123"));
+    ASSERT_EQUAL("read from start", StormByte::String::FromByteVector(*fromStart), std::string("0123"));
 
     consumer.Seek(7, Position::Absolute);
     auto from7 = consumer.Read(2);
-    ASSERT_EQUAL("read from pos 7", toString(*from7), std::string("78"));
+    ASSERT_EQUAL("read from pos 7", StormByte::String::FromByteVector(*from7), std::string("78"));
 
     RETURN_TEST("test_producer_consumer_seek_operations", 0);
 }
@@ -161,7 +150,7 @@ int test_producer_consumer_copy_semantics() {
 
     auto consumer = producer1.Consumer();
     auto all = consumer.Read(0);
-    ASSERT_EQUAL("both producers share buffer", toString(*all), std::string("OriginalAdded"));
+    ASSERT_EQUAL("both producers share buffer", StormByte::String::FromByteVector(*all), std::string("OriginalAdded"));
 
     // Copy consumer - should share buffer
     auto consumer2 = consumer;
@@ -182,7 +171,7 @@ int test_producer_consumer_move_semantics() {
 
     auto consumer2 = std::move(consumer);
     auto data = consumer2.Read(0);
-    ASSERT_EQUAL("moved consumer works", toString(*data), std::string("DataMore"));
+    ASSERT_EQUAL("moved consumer works", StormByte::String::FromByteVector(*data), std::string("DataMore"));
 
     RETURN_TEST("test_producer_consumer_move_semantics", 0);
 }
@@ -208,7 +197,7 @@ int test_single_producer_single_consumer_threaded() {
         while (true) {
             auto data = consumer.Extract(10);
             if (data->empty() && consumer.IsClosed()) break;
-            collected.append(toString(*data));
+            collected.append(StormByte::String::FromByteVector(*data));
             std::this_thread::sleep_for(std::chrono::microseconds(5));
         }
     });
@@ -251,7 +240,7 @@ int test_multiple_producers_single_consumer() {
         while (completed_producers.load() < 3 || !consumer.Empty()) {
             auto data = consumer.Extract(10);
             if (!data->empty()) {
-                collected.append(toString(*data));
+                collected.append(StormByte::String::FromByteVector(*data));
             }
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
@@ -428,12 +417,12 @@ int test_producer_consumer_byte_vector_write() {
     Producer producer;
     auto consumer = producer.Consumer();
 
-    std::vector<std::byte> bytes = toBytes("Binary data");
+    std::vector<std::byte> bytes = StormByte::String::ToByteVector("Binary data");
     producer.Write(bytes);
 
     auto read_data = consumer.Read(0);
     ASSERT_EQUAL("byte vector write size", read_data->size(), bytes.size());
-    ASSERT_EQUAL("byte vector write content", toString(*read_data), std::string("Binary data"));
+    ASSERT_EQUAL("byte vector write content", StormByte::String::FromByteVector(*read_data), std::string("Binary data"));
 
     RETURN_TEST("test_producer_consumer_byte_vector_write", 0);
 }
@@ -445,15 +434,15 @@ int test_producer_consumer_interleaved_operations() {
     producer.Write("Part1");
     producer.Close();
     auto r1 = consumer.Extract(3);
-    ASSERT_EQUAL("extract Par", toString(*r1), std::string("Par"));
+    ASSERT_EQUAL("extract Par", StormByte::String::FromByteVector(*r1), std::string("Par"));
 
     // After Extract(3), "t1" remains
     auto r2 = consumer.Read(0);
-    ASSERT_EQUAL("remaining t1", toString(*r2), std::string("t1"));
+    ASSERT_EQUAL("remaining t1", StormByte::String::FromByteVector(*r2), std::string("t1"));
 
     consumer.Seek(0, Position::Absolute);
     auto r3 = consumer.Read(2);
-    ASSERT_EQUAL("after seek to start", toString(*r3), std::string("t1"));
+    ASSERT_EQUAL("after seek to start", StormByte::String::FromByteVector(*r3), std::string("t1"));
 
     RETURN_TEST("test_producer_consumer_interleaved_operations", 0);
 }
@@ -522,7 +511,7 @@ int test_producer_consumer_pipeline_pattern() {
             auto data = stage1_consumer.Extract(10);
             if (data->empty() && stage1_consumer.IsClosed()) break;
             
-            std::string str = toString(*data);
+            std::string str = StormByte::String::FromByteVector(*data);
             std::transform(str.begin(), str.end(), str.begin(), ::toupper);
             stage2_producer.Write(str);
         }
@@ -535,7 +524,7 @@ int test_producer_consumer_pipeline_pattern() {
         while (true) {
             auto data = stage2_consumer.Extract(10);
             if (data->empty() && stage2_consumer.IsClosed()) break;
-            final_result.append(toString(*data));
+            final_result.append(StormByte::String::FromByteVector(*data));
         }
         done.store(true);
     });
@@ -562,7 +551,7 @@ int test_out_of_sync_partial_writes() {
     // Consumer expects 10 bytes but producer sends them in parts
     std::thread consumer_thread([&]() {
         auto data = consumer.Read(10); // Blocks until 10 bytes available or closed
-        result = toString(*data);
+        result = StormByte::String::FromByteVector(*data);
         consumer_done.store(true);
     });
     
@@ -596,7 +585,7 @@ int test_consumer_waits_for_insufficient_data() {
     std::thread consumer_thread([&]() {
         read_started.store(true);
         auto data = consumer.Read(20); // Request 20 bytes
-        result = toString(*data);
+        result = StormByte::String::FromByteVector(*data);
         read_completed.store(true);
     });
     
@@ -630,7 +619,7 @@ int test_multiple_consumers_with_partial_data() {
     auto consumer_func = [&](int id) {
         Consumer cons = consumer;
         auto data = cons.Read(5); // Each wants 5 bytes
-        results[id] = toString(*data);
+        results[id] = StormByte::String::FromByteVector(*data);
         reads_completed.fetch_add(1);
     };
     
@@ -681,10 +670,10 @@ int test_interleaved_read_extract_with_blocking() {
     
     // Non-blocking operations since data is already available
     auto r1 = consumer.Read(5);
-    read_result = toString(*r1);
+    read_result = StormByte::String::FromByteVector(*r1);
     
     auto e1 = consumer.Extract(3);
-    extract_result = toString(*e1);
+    extract_result = StormByte::String::FromByteVector(*e1);
     
     ASSERT_EQUAL("reader got 5 bytes", read_result.size(), static_cast<size_t>(5));
     ASSERT_EQUAL("extractor got 3 bytes", extract_result.size(), static_cast<size_t>(3));
@@ -702,7 +691,7 @@ int test_producer_close_during_consumer_wait() {
     std::thread consumer_thread([&]() {
         // This will block until closed since we request more than available
         auto data = consumer.Read(100);
-        result = toString(*data);
+        result = StormByte::String::FromByteVector(*data);
         completed.store(true);
     });
     
@@ -786,7 +775,7 @@ int test_seek_during_blocked_read() {
     
     // Read 10 bytes from position 5
     auto data = consumer.Read(10);
-    std::string result = toString(*data);
+    std::string result = StormByte::String::FromByteVector(*data);
     
     ASSERT_EQUAL("got 10 bytes", result.size(), static_cast<size_t>(10));
     ASSERT_EQUAL("correct data from position 5", result, std::string("56789ABCDE"));
@@ -886,7 +875,7 @@ int test_consumer_clear_during_production() {
     
     // Read new data
     auto data = consumer.Extract(0);
-    ASSERT_EQUAL("got data after clear", toString(*data), std::string("AfterClear"));
+    ASSERT_EQUAL("got data after clear", StormByte::String::FromByteVector(*data), std::string("AfterClear"));
     
     RETURN_TEST("test_consumer_clear_during_production", 0);
 }
@@ -906,7 +895,7 @@ int test_multiple_sequential_read_blocks() {
     // Multiple sequential reads
     for (int i = 0; i < 5; ++i) {
         auto data = consumer.Read(4);
-        results.push_back(toString(*data));
+        results.push_back(StormByte::String::FromByteVector(*data));
         
         // Reset read position after each read except the last
         if (i < 4) {
