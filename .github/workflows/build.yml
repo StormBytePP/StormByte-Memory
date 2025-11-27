@@ -1,0 +1,88 @@
+name: CMake
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+        stdlib: [libstdc++, libc++]
+        exclude:
+        - compiler: gcc
+          stdlib: libc++
+    name: ${{ matrix.compiler }}-${{ matrix.stdlib }}
+
+    steps:
+    - name: Checkout repository and submodules
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install toolchain
+      id: install-toolchain
+      uses: stormbytepp/install-toolchain@v1
+      with:
+        compiler: ${{ matrix.compiler }}
+
+    - name: Build with CMake
+      uses: ashutoshvarma/action-cmake-build@master
+      with:
+        build-dir: ${{ github.workspace }}/build
+        cc: ${{ steps.install-toolchain.outputs.c_compiler }}
+        cxx: ${{ steps.install-toolchain.outputs.cxx_compiler }}
+        configure-options: >-
+          -G Ninja
+          -DWITH_SYSTEM_STORMBYTE=OFF
+          -DENABLE_TEST=ON
+        build-type: ${{ env.BUILD_TYPE }}
+
+    - name: Run unit tests
+      run: ctest --output-on-failure --test-dir ${{ github.workspace }}/build
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch:
+          - x64
+
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install toolchain
+        id: install-toolchain
+        uses: stormbytepp/install-toolchain@v1
+        with:
+          compiler: msvc
+
+      - name: Build with CMake
+        uses: ashutoshvarma/action-cmake-build@master
+        with:
+          build-dir: ${{ github.workspace }}/build
+          configure-options: >-
+            -G Ninja
+            -DWITH_SYSTEM_STORMBYTE=OFF
+            -DENABLE_TEST=ON
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Copy DLLs
+        run: |
+          Copy-Item -Path "${{ github.workspace }}\build\thirdparty\StormByte\base\lib\StormByte.dll" -Destination "${{ github.workspace }}\build\test" -Force
+          Copy-Item -Path "${{ github.workspace }}\build\lib\StormByte-Memory.dll" -Destination "${{ github.workspace }}\build\test" -Force
+          
+
+      - name: Run unit tests
+        run: ctest --output-on-failure --test-dir ${{ github.workspace }}\build
