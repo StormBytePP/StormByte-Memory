@@ -42,12 +42,6 @@ namespace StormByte::Buffer {
 			 *  @param other Source FIFO to copy from.
 			 */
 			FIFO(const FIFO& other) noexcept;
-
-			/**
-			 * 	@brief Convenience write from string (bytes copied from string data).
-			 *  @param data String whose bytes will be written into the FIFO.
-			 */
-			void Write(const std::string& data);
 			
 			/**
 			 * 	@brief Move construct, preserving buffer state and initial capacity.
@@ -82,7 +76,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Current capacity (number of slots in the buffer).
 			 */
-			inline std::size_t Capacity() const noexcept { return m_buffer.size(); }
+			virtual std::size_t Capacity() const noexcept;
 
 			/**
 			 * @brief Whether the buffer has no data.
@@ -90,14 +84,9 @@ namespace StormByte::Buffer {
 			inline bool Empty() const noexcept { return m_size == 0; }
 
 			/**
-			 * @brief Whether the buffer is full (non-zero capacity and size == capacity).
-			 */
-			inline bool Full() const noexcept { return m_size == m_buffer.size() && m_buffer.size() != 0; }
-
-			/**
 			 * @brief Clear contents and restore capacity to the constructor-requested value.
 			 */
-			void Clear() noexcept;
+			virtual void Clear() noexcept;
 
 			/**
 			 * @brief Close the FIFO for further writes
@@ -108,19 +97,25 @@ namespace StormByte::Buffer {
 			 * 	@brief Ensure capacity is at least @p newCapacity; may relinearize.
 			 *  @param newCapacity Minimum capacity requested.
 			 */
-			void Reserve(std::size_t newCapacity);
+			virtual void Reserve(std::size_t newCapacity);
 
 			/**
 			 * 	@brief Write bytes from a vector; grows if needed, handles wrap.
 			 *  @param data Byte vector to append to the FIFO.
 			 */
-			void Write(const std::vector<std::byte>& data);
+			virtual void Write(const std::vector<std::byte>& data);
 			
 			/**
 			 * 	@brief Write bytes from an rvalue vector; adopts storage when empty.
 			 *  @param data Byte vector to append; may be moved into the FIFO.
 			 */
-			void Write(std::vector<std::byte>&& data) noexcept;
+			virtual void Write(std::vector<std::byte>&& data) noexcept;
+
+			/**
+			 * 	@brief Convenience write from string (bytes copied from string data).
+			 *  @param data String whose bytes will be written into the FIFO.
+			 */
+			virtual void Write(const std::string& data);
 
 			/**
 			 * 	@brief Read up to @p count bytes (or all if count == 0).
@@ -128,7 +123,7 @@ namespace StormByte::Buffer {
 			 *  @return A vector containing the requested bytes.
 			 *  @note Reading all when contiguous (head == 0) returns bytes via move.
 			 */
-			std::vector<std::byte> Read(std::size_t count = 0);
+			virtual std::vector<std::byte> Read(std::size_t count = 0);
 
 			/**
 			 * @brief Whether the FIFO is closed for further writes

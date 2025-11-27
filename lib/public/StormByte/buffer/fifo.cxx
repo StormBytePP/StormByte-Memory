@@ -40,6 +40,19 @@ FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	return *this;
 }
 
+std::size_t FIFO::Capacity() const noexcept {
+	return m_buffer.size();
+}
+
+void FIFO::Clear() noexcept {
+	// Erase logical contents and ensure reserved capacity equals initial request
+	m_buffer.clear();
+	if (m_initialCapacity > 0) {
+		m_buffer.resize(m_initialCapacity);
+	}
+	m_head = m_tail = m_size = 0;
+}
+
 void FIFO::Reserve(std::size_t newCapacity) {
 	if (newCapacity <= m_buffer.size()) return;
 	std::vector<std::byte> dst(newCapacity);
@@ -137,13 +150,4 @@ void FIFO::RelinearizeInto(std::vector<std::byte>& dst) const {
 	if (second) {
 		std::copy_n(m_buffer.begin(), second, dst.begin() + static_cast<std::ptrdiff_t>(first));
 	}
-}
-
-void FIFO::Clear() noexcept {
-	// Erase logical contents and ensure reserved capacity equals initial request
-	m_buffer.clear();
-	if (m_initialCapacity > 0) {
-		m_buffer.resize(m_initialCapacity);
-	}
-	m_head = m_tail = m_size = 0;
 }

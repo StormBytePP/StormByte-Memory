@@ -172,17 +172,6 @@ int test_fifo_read_default_all() {
     RETURN_TEST("test_fifo_read_default_all", 0);
 }
 
-int test_fifo_full_flag_transitions() {
-    FIFO fifo(2);
-    fifo.Write(std::string("AB"));
-    ASSERT_TRUE("full true", fifo.Full());
-    auto out = fifo.Read(1);
-    ASSERT_TRUE("full false after read", !fifo.Full());
-    fifo.Write(std::string("C"));
-    ASSERT_TRUE("full true again", fifo.Full());
-    RETURN_TEST("test_fifo_full_flag_transitions", 0);
-}
-
 int test_fifo_adopt_storage_move_write() {
     FIFO fifo;
     auto v = bytesFromString("MOVE");
@@ -203,16 +192,6 @@ int test_fifo_reserve_and_clear() {
     ASSERT_TRUE("test_fifo_reserve_and_clear empty", fifo.Empty());
     ASSERT_EQUAL("test_fifo_reserve_and_clear size", fifo.Size(), static_cast<std::size_t>(0));
     RETURN_TEST("test_fifo_reserve_and_clear", 0);
-}
-
-int test_fifo_full_flag() {
-    FIFO fifo(3);
-    fifo.Write(bytesFromString("ABC"));
-    ASSERT_TRUE("test_fifo_full_flag full", fifo.Full());
-    auto out = fifo.Read(1);
-    ASSERT_TRUE("test_fifo_full_flag not full", !fifo.Full());
-    ASSERT_EQUAL("test_fifo_full_flag content", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("A"));
-    RETURN_TEST("test_fifo_full_flag", 0);
 }
 
 int test_fifo_closed_noop_on_empty() {
@@ -244,9 +223,6 @@ int main() {
     result += test_fifo_wrap_around();
     result += test_fifo_adopt_storage_move_write();
     result += test_fifo_reserve_and_clear();
-    result += test_fifo_full_flag();
-
-    // API coverage tests based on fifo.hxx
     result += test_fifo_default_ctor();
     result += test_fifo_capacity_ctor();
     result += test_fifo_copy_ctor_assign();
@@ -255,13 +231,8 @@ int main() {
     result += test_fifo_reserve();
     result += test_fifo_write_vector_and_rvalue();
     result += test_fifo_read_default_all();
-    result += test_fifo_full_flag_transitions();
-
-    // Closed FIFO behavior
     result += test_fifo_closed_noop_on_empty();
     result += test_fifo_closed_noop_on_nonempty();
-
-    // Buffer stress test
     result += test_fifo_buffer_stress();
 
     if (result == 0) {
