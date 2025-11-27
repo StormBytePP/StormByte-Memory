@@ -13,21 +13,30 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
- * The Buffer namespace provides classes and utilities for diferent buffers
+ * The Buffer namespace provides classes and utilities for different buffer types
+ * including FIFO ring buffers, thread-safe shared buffers, and producer-consumer patterns.
  */
 namespace StormByte::Buffer {
 	/**
 	 * @class FIFO
 	 * @brief Byte-oriented ring buffer with grow-on-demand.
+	 *
 	 * @par Overview
 	 *  A circular buffer implemented atop @c std::vector<std::byte> that tracks
 	 *  head/tail indices and current size. It grows geometrically to fit writes
 	 *  and supports efficient reads even across wrap boundaries.
+	 *
+	 * @par Thread safety
+	 *  This class is **not thread-safe**. For concurrent access, use @ref SharedFIFO.
+	 *
 	 * @par Buffer behavior
 	 *  The constructor-requested capacity is remembered and restored by @ref Clear().
-	 *  When empty, an rvalue @ref Write(std::vector<std::byte>&&) adopts storage
-	 *  wholesale to avoid copies. Reading the entire content when it is contiguous
-	 *  (head == 0) uses a zero-copy fast path via move.
+	 *  When empty, an rvalue write adopts storage wholesale to avoid copies.
+	 *  Reading the entire content when it is contiguous (head == 0) uses a
+	 *  zero-copy fast path via move semantics.
+	 *
+	 * @see SharedFIFO for thread-safe version
+	 * @see Producer and Consumer for higher-level producer-consumer pattern
 	 */
 	class STORMBYTE_BUFFER_PUBLIC FIFO {
 		public:
@@ -69,89 +78,109 @@ namespace StormByte::Buffer {
 			FIFO& operator=(FIFO&& other) noexcept;
 
 			/**
-			 * @brief Current number of bytes stored.
+			 * @brief Get the current number of bytes stored in the buffer.
+			 * @return The total number of bytes available for reading.
+			 * @see Capacity(), Empty()
 			 */
 			inline std::size_t Size() const noexcept { return m_size; }
 			
 			/**
-			 * @brief Current capacity (number of slots in the buffer).
+			 * @brief Get the current allocated capacity.
+			 * @return The number of bytes allocated in the underlying buffer.
+			 * @details Capacity may be larger than Size(). The buffer grows automatically
+			 *          when needed.
+			 * @see Size(), Reserve()
 			 */
 			virtual std::size_t Capacity() const noexcept;
 
 			/**
-			 * @brief Whether the buffer has no data.
+			 * @brief Check if the buffer is empty.
+			 * @return true if the buffer contains no data, false otherwise.
+			 * @see Size()
 			 */
 			inline bool Empty() const noexcept { return m_size == 0; }
 
 			/**
-			 * @brief Clear contents and restore capacity to the constructor-requested value.
+			 * @brief Clear all buffer contents.
+			 * @details Removes all data from the buffer, resets head/tail/read positions,
+			 *          and restores capacity to the initial value requested in the constructor.
+			 * @see Size(), Empty()
 			 */
 			virtual void Clear() noexcept;
 
 			/**
-			 * @brief Close the FIFO for further writes
+			 * @brief Close the FIFO for further writes.
+			 * @details Marks the buffer as closed. Subsequent Write() calls will be ignored.
+			 *          For SharedFIFO, also notifies waiting readers.
+			 * @see IsClosed(), SharedFIFO::Close()
 			 */
 			inline void Close() noexcept { m_closed.store(true); }
 
 			/**
-			 * 	@brief Ensure capacity is at least @p newCapacity; may relinearize.
-			 *  @param newCapacity Minimum capacity requested.
+			 * @brief Pre-allocate buffer capacity.
+			 * @param newCapacity Minimum capacity to ensure (in bytes).
+			 * @details Ensures the buffer can hold at least newCapacity bytes without
+			 *          reallocation. May relinearize the ring buffer if needed.
+			 * @see Capacity()
 			 */
 			virtual void Reserve(std::size_t newCapacity);
 
 			/**
-			 * 	@brief Write bytes from a vector; grows if needed, handles wrap.
-			 *  @param data Byte vector to append to the FIFO.
+			 * @brief Write bytes from a vector to the buffer.
+			 * @param data Byte vector to append to the FIFO.
+			 * @details Appends data to the buffer, growing capacity automatically if needed.
+			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
+			 * @see Write(const std::string&), IsClosed()
 			 */
 			virtual void Write(const std::vector<std::byte>& data);
 
 			/**
-			 * 	@brief Convenience write from string (bytes copied from string data).
-			 *  @param data String whose bytes will be written into the FIFO.
+			 * @brief Write a string to the buffer.
+			 * @param data String whose bytes will be written into the FIFO.
+			 * @details Convenience method that converts the string to bytes and appends
+			 *          to the buffer. Equivalent to Write(std::vector<std::byte>).
+			 * @see Write(const std::vector<std::byte>&)
 			 */
 			void Write(const std::string& data);
 
 			/**
-			 * 	@brief Non-destructive read up to @p count bytes from current read position.
-			 *  @param count Number of bytes to read; 0 reads all available from read position.
-			 *  @return A vector containing the requested bytes.
-			 *  @note This operation is non-destructive. Data remains in the FIFO and can be
-			 *        read again by resetting the read position. The internal read position
-			 *        is advanced by the number of bytes read. Use @ref Extract() for
-			 *        destructive reads that remove data from the buffer.
-			 *  @see Extract()
+			 * @brief Non-destructive read from the buffer.
+			 * @param count Number of bytes to read; 0 reads all available from read position.
+			 * @return A vector containing the requested bytes.
+			 * @details Non-destructive operation - data remains in the buffer and can be
+			 *          read again using Seek(). The read position advances by the number
+			 *          of bytes read. Returns fewer bytes if insufficient data available.
+			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Read().
+			 * @see Extract(), Seek(), SharedFIFO::Read()
 			 */
 			virtual std::vector<std::byte> Read(std::size_t count = 0);
 
 			/**
-			 * 	@brief Extract up to @p count bytes (destructive read).
-			 *  @param count Number of bytes to extract; 0 extracts all available.
-			 *  @return A vector containing the extracted bytes.
-			 *  @note This operation removes data from the FIFO, advancing the head pointer
-			 *        and decreasing size. The read position is adjusted accordingly.
-			 *        When extracting all data and it's contiguous (head == 0), uses
-			 *        zero-copy move semantics.
-			 *  @see Read()
+			 * @brief Destructive read that removes data from the buffer.
+			 * @param count Number of bytes to extract; 0 extracts all available.
+			 * @return A vector containing the extracted bytes.
+			 * @details Removes data from the buffer, advancing the head and decreasing size.
+			 *          The read position is adjusted. Uses zero-copy move semantics when
+			 *          extracting all contiguous data (optimization).
+			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Extract().
+			 * @see Read(), SharedFIFO::Extract()
 			 */
 			virtual std::vector<std::byte> Extract(std::size_t count = 0);
 
 			/**
-			 * @brief Whether the FIFO is closed for further writes.
-			 * @return true if the FIFO is closed, false otherwise.
+			 * @brief Check if the buffer is closed for further writes.
+			 * @return true if closed, false otherwise.
+			 * @see Close()
 			 */
 			inline bool IsClosed() const noexcept { return m_closed.load(); }
 
 			/**
 			 * @brief Move the read position for non-destructive reads.
-			 * @param position The position offset to apply.
-			 * @param mode Positioning mode: Position::Absolute sets the read position to
-			 *             an absolute offset from the head, Position::Relative adjusts
-			 *             the read position by the given offset from the current position.
-			 * @note In Absolute mode, the position is clamped to the range [0, Size()].
-			 *       In Relative mode, the resulting position is clamped to valid bounds.
-			 *       Seeking does not affect the data stored in the FIFO, only the position
-			 *       from which subsequent @ref Read() operations will start.
-			 * @see Read()
+			 * @param position The offset value to apply.
+			 * @param mode Position::Absolute (from start) or Position::Relative (from current).
+			 * @details Changes where subsequent Read() operations will start reading from.
+			 *          Position is clamped to [0, Size()]. Does not affect stored data.
+			 * @see Read(), Position
 			 */
 			virtual void Seek(const std::size_t& position, const Position& mode);
 

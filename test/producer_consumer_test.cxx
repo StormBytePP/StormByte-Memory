@@ -1,0 +1,1073 @@
+/**
+ * @file producer_consumer_test.cxx
+ * @brief Comprehensive test suite for Producer/Consumer buffer classes
+ * 
+ * This test suite validates the reliability and correctness of the Producer/Consumer
+ * buffer implementation across various scenarios:
+ * 
+ * BASIC TESTS (11):
+ * - Basic write/read, multiple writes, extract operations
+ * - Close mechanism, seek operations, copy/move semantics
+ * - Byte vector writes, clear operations, reserve capacity
+ * 
+ * THREADING TESTS (6):
+ * - Single/multiple producer(s) with single/multiple consumer(s)
+ * - Stress tests with rapid operations
+ * - Pipeline pattern (multi-stage processing)
+ * 
+ * COMPLEX RELIABILITY TESTS (13):
+ * - Out-of-sync partial writes (producer writes in small chunks, consumer waits for more)
+ * - Insufficient data handling (consumer requests more than available)
+ * - Multiple consumers with partial data availability
+ * - Interleaved blocking read/extract operations
+ * - Close during consumer wait states
+ * - Rapid writes with slow consumers
+ * - Extract(0) behavior (non-blocking read-all)
+ * - Seek during blocked reads
+ * - Very large data transfers (1MB+)
+ * - Alternating small/large writes
+ * - Clear during active production
+ * - Multiple sequential blocking reads
+ * - Burst writes with pre-allocated capacity
+ * 
+ * Total: 30 test cases
+ */
+
+#include <StormByte/buffer/producer.hxx>
+#include <StormByte/buffer/consumer.hxx>
+#include <StormByte/test_handlers.h>
+
+#include <thread>
+#include <vector>
+#include <string>
+#include <atomic>
+#include <chrono>
+#include <iostream>
+#include <algorithm>
+#include <numeric>
+
+using StormByte::Buffer::Producer;
+using StormByte::Buffer::Consumer;
+using StormByte::Buffer::Position;
+
+static std::string toString(const std::vector<std::byte>& v) {
+    return std::string(reinterpret_cast<const char*>(v.data()), v.size());
+}
+
+static std::vector<std::byte> toBytes(const std::string& s) {
+    std::vector<std::byte> result(s.size());
+    std::transform(s.begin(), s.end(), result.begin(), 
+                   [](char c) { return static_cast<std::byte>(c); });
+    return result;
+}
+
+int test_producer_consumer_basic_write_read() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    const std::string message = "Hello, World!";
+    producer.Write(message);
+    producer.Close();
+
+    ASSERT_EQUAL("size matches", consumer.Size(), message.size());
+    ASSERT_FALSE("not empty", consumer.Empty());
+
+    auto data = consumer.Read(message.size());
+    ASSERT_EQUAL("content matches", toString(data), message);
+
+    RETURN_TEST("test_producer_consumer_basic_write_read", 0);
+}
+
+int test_producer_consumer_multiple_writes() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    producer.Write("First");
+    producer.Write("Second");
+    producer.Write("Third");
+
+    auto all = consumer.Read(0);
+    ASSERT_EQUAL("concatenated content", toString(all), std::string("FirstSecondThird"));
+
+    RETURN_TEST("test_producer_consumer_multiple_writes", 0);
+}
+
+int test_producer_consumer_extract() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    producer.Write("ABCDEFGH");
+    ASSERT_EQUAL("initial size", consumer.Size(), static_cast<std::size_t>(8));
+
+    auto first = consumer.Extract(3);
+    ASSERT_EQUAL("extracted ABC", toString(first), std::string("ABC"));
+    ASSERT_EQUAL("size after extract", consumer.Size(), static_cast<std::size_t>(5));
+
+    auto rest = consumer.Extract(0);
+    ASSERT_EQUAL("rest is DEFGH", toString(rest), std::string("DEFGH"));
+    ASSERT_TRUE("empty after extract all", consumer.Empty());
+
+    RETURN_TEST("test_producer_consumer_extract", 0);
+}
+
+int test_producer_consumer_close_mechanism() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    producer.Write("Data");
+    ASSERT_FALSE("not closed initially", consumer.IsClosed());
+
+    producer.Close();
+    ASSERT_TRUE("closed after Close()", consumer.IsClosed());
+
+    // Writing after close should be ignored
+    producer.Write("MoreData");
+    ASSERT_EQUAL("size unchanged after close write", consumer.Size(), static_cast<std::size_t>(4));
+
+    RETURN_TEST("test_producer_consumer_close_mechanism", 0);
+}
+
+int test_producer_consumer_seek_operations() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    producer.Write("0123456789");
+    producer.Close();
+
+    consumer.Seek(5, Position::Absolute);
+    auto from5 = consumer.Read(3);
+    ASSERT_EQUAL("read from pos 5", toString(from5), std::string("567"));
+
+    // After reading 3 bytes, position is at 8, relative +2 goes to 10 (end)
+    consumer.Seek(0, Position::Absolute);
+    auto fromStart = consumer.Read(4);
+    ASSERT_EQUAL("read from start", toString(fromStart), std::string("0123"));
+
+    consumer.Seek(7, Position::Absolute);
+    auto from7 = consumer.Read(2);
+    ASSERT_EQUAL("read from pos 7", toString(from7), std::string("78"));
+
+    RETURN_TEST("test_producer_consumer_seek_operations", 0);
+}
+
+int test_producer_consumer_copy_semantics() {
+    Producer producer1;
+    producer1.Write("Original");
+
+    // Copy producer - should share buffer
+    Producer producer2 = producer1;
+    producer2.Write("Added");
+
+    auto consumer = producer1.Consumer();
+    auto all = consumer.Read(0);
+    ASSERT_EQUAL("both producers share buffer", toString(all), std::string("OriginalAdded"));
+
+    // Copy consumer - should share buffer
+    auto consumer2 = consumer;
+    ASSERT_EQUAL("consumer copy shares state", consumer2.Size(), consumer.Size());
+
+    RETURN_TEST("test_producer_consumer_copy_semantics", 0);
+}
+
+int test_producer_consumer_move_semantics() {
+    Producer producer1;
+    producer1.Write("Data");
+
+    Producer producer2 = std::move(producer1);
+    producer2.Write("More");
+
+    auto consumer = producer2.Consumer();
+    ASSERT_EQUAL("moved producer retains data", consumer.Size(), static_cast<std::size_t>(8));
+
+    auto consumer2 = std::move(consumer);
+    auto data = consumer2.Read(0);
+    ASSERT_EQUAL("moved consumer works", toString(data), std::string("DataMore"));
+
+    RETURN_TEST("test_producer_consumer_move_semantics", 0);
+}
+
+int test_single_producer_single_consumer_threaded() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    const int messages = 100;
+    std::atomic<bool> producer_done{false};
+    std::string collected;
+
+    std::thread prod_thread([&]() {
+        for (int i = 0; i < messages; ++i) {
+            producer.Write(std::to_string(i) + ",");
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+        }
+        producer.Close();
+        producer_done.store(true);
+    });
+
+    std::thread cons_thread([&]() {
+        while (true) {
+            auto data = consumer.Extract(10);
+            if (data.empty() && consumer.IsClosed()) break;
+            collected.append(toString(data));
+            std::this_thread::sleep_for(std::chrono::microseconds(5));
+        }
+    });
+
+    prod_thread.join();
+    cons_thread.join();
+
+    ASSERT_TRUE("producer completed", producer_done.load());
+    ASSERT_TRUE("consumer received data", !collected.empty());
+    ASSERT_TRUE("consumer closed", consumer.IsClosed());
+
+    RETURN_TEST("test_single_producer_single_consumer_threaded", 0);
+}
+
+int test_multiple_producers_single_consumer() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    const int chunks_per_producer = 50;
+    std::atomic<int> completed_producers{0};
+    
+    auto producer_func = [&](char id) {
+        Producer prod_copy = producer; // Share the buffer
+        for (int i = 0; i < chunks_per_producer; ++i) {
+            prod_copy.Write(std::string(1, id));
+            std::this_thread::sleep_for(std::chrono::microseconds(1));
+        }
+        completed_producers.fetch_add(1);
+    };
+
+    std::thread prod1(producer_func, 'A');
+    std::thread prod2(producer_func, 'B');
+    std::thread prod3(producer_func, 'C');
+
+    std::string collected;
+    std::thread cons_thread([&]() {
+        // Wait a bit for producers to start
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+        while (completed_producers.load() < 3 || !consumer.Empty()) {
+            auto data = consumer.Extract(10);
+            if (!data.empty()) {
+                collected.append(toString(data));
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+    });
+
+    prod1.join();
+    prod2.join();
+    prod3.join();
+    cons_thread.join();
+
+    ASSERT_EQUAL("all producers completed", completed_producers.load(), 3);
+    
+    // Count occurrences of each character
+    size_t countA = std::count(collected.begin(), collected.end(), 'A');
+    size_t countB = std::count(collected.begin(), collected.end(), 'B');
+    size_t countC = std::count(collected.begin(), collected.end(), 'C');
+
+    ASSERT_EQUAL("A count", countA, static_cast<size_t>(chunks_per_producer));
+    ASSERT_EQUAL("B count", countB, static_cast<size_t>(chunks_per_producer));
+    ASSERT_EQUAL("C count", countC, static_cast<size_t>(chunks_per_producer));
+    ASSERT_EQUAL("total size", collected.size(), static_cast<size_t>(chunks_per_producer * 3));
+
+    RETURN_TEST("test_multiple_producers_single_consumer", 0);
+}
+
+int test_single_producer_multiple_consumers() {
+    Producer producer;
+    auto consumer1 = producer.Consumer();
+    auto consumer2 = consumer1; // Share the same consumer buffer
+    auto consumer3 = consumer1;
+    
+    const int total_bytes = 300;
+    std::atomic<bool> producer_done{false};
+    std::atomic<size_t> consumed1{0}, consumed2{0}, consumed3{0};
+
+    std::thread prod_thread([&]() {
+        for (int i = 0; i < total_bytes; ++i) {
+            producer.Write("X");
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+        }
+        producer.Close();
+        producer_done.store(true);
+    });
+
+    auto consumer_func = [&](Consumer& cons, std::atomic<size_t>& counter) {
+        while (true) {
+            auto data = cons.Extract(5);
+            if (data.empty() && cons.IsClosed()) break;
+            counter.fetch_add(data.size());
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    };
+
+    std::thread cons1_thread(consumer_func, std::ref(consumer1), std::ref(consumed1));
+    std::thread cons2_thread(consumer_func, std::ref(consumer2), std::ref(consumed2));
+    std::thread cons3_thread(consumer_func, std::ref(consumer3), std::ref(consumed3));
+
+    prod_thread.join();
+    cons1_thread.join();
+    cons2_thread.join();
+    cons3_thread.join();
+
+    ASSERT_TRUE("producer completed", producer_done.load());
+    
+    size_t total_consumed = consumed1.load() + consumed2.load() + consumed3.load();
+    ASSERT_EQUAL("all data consumed", total_consumed, static_cast<size_t>(total_bytes));
+    
+    // At least one consumer must have gotten data, but race conditions mean
+    // it's possible (though unlikely) for one consumer to get everything
+    size_t consumers_with_data = 0;
+    if (consumed1.load() > 0) consumers_with_data++;
+    if (consumed2.load() > 0) consumers_with_data++;
+    if (consumed3.load() > 0) consumers_with_data++;
+    ASSERT_TRUE("at least one consumer got data", consumers_with_data >= 1);
+
+    RETURN_TEST("test_single_producer_multiple_consumers", 0);
+}
+
+int test_multiple_producers_multiple_consumers() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    const int producers_count = 4;
+    const int consumers_count = 3;
+    const int messages_per_producer = 50;
+    
+    std::atomic<int> completed_producers{0};
+    std::atomic<int> completed_consumers{0};
+    std::atomic<size_t> total_consumed{0};
+
+    std::vector<std::thread> producers;
+    for (int p = 0; p < producers_count; ++p) {
+        producers.emplace_back([&, p]() {
+            Producer prod_copy = producer;
+            for (int i = 0; i < messages_per_producer; ++i) {
+                prod_copy.Write(std::string(1, 'A' + p));
+                std::this_thread::sleep_for(std::chrono::microseconds(5));
+            }
+            completed_producers.fetch_add(1);
+        });
+    }
+
+    std::vector<std::thread> consumers;
+    for (int c = 0; c < consumers_count; ++c) {
+        consumers.emplace_back([&]() {
+            Consumer cons_copy = consumer;
+            size_t local_consumed = 0;
+            
+            while (true) {
+                auto data = cons_copy.Extract(10);
+                if (data.empty() && cons_copy.IsClosed()) break;
+                if (!data.empty()) {
+                    local_consumed += data.size();
+                }
+                std::this_thread::sleep_for(std::chrono::microseconds(20));
+            }
+            
+            total_consumed.fetch_add(local_consumed);
+            completed_consumers.fetch_add(1);
+        });
+    }
+
+    for (auto& t : producers) t.join();
+    producer.Close(); // Close after all producers are done
+    for (auto& t : consumers) t.join();
+
+    ASSERT_EQUAL("all producers completed", completed_producers.load(), producers_count);
+    ASSERT_EQUAL("all consumers completed", completed_consumers.load(), consumers_count);
+    
+    size_t expected_total = producers_count * messages_per_producer;
+    ASSERT_EQUAL("all data consumed", total_consumed.load(), expected_total);
+
+    RETURN_TEST("test_multiple_producers_multiple_consumers", 0);
+}
+
+int test_producer_consumer_with_reserve() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    // Reserve capacity upfront
+    producer.Reserve(1000);
+
+    const std::string large_message(500, 'Z');
+    producer.Write(large_message);
+    producer.Write(large_message);
+
+    ASSERT_EQUAL("size after large writes", consumer.Size(), static_cast<std::size_t>(1000));
+
+    auto data = consumer.Extract(0);
+    ASSERT_EQUAL("extracted size", data.size(), static_cast<std::size_t>(1000));
+
+    RETURN_TEST("test_producer_consumer_with_reserve", 0);
+}
+
+int test_producer_consumer_clear_operation() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    producer.Write("Some data to clear");
+    ASSERT_FALSE("not empty before clear", consumer.Empty());
+
+    consumer.Clear();
+    ASSERT_TRUE("empty after clear", consumer.Empty());
+    ASSERT_EQUAL("size is zero", consumer.Size(), static_cast<std::size_t>(0));
+
+    // Can still write after clear
+    producer.Write("New data");
+    ASSERT_EQUAL("new data size", consumer.Size(), static_cast<std::size_t>(8));
+
+    RETURN_TEST("test_producer_consumer_clear_operation", 0);
+}
+
+int test_producer_consumer_byte_vector_write() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    std::vector<std::byte> bytes = toBytes("Binary data");
+    producer.Write(bytes);
+
+    auto read_data = consumer.Read(0);
+    ASSERT_EQUAL("byte vector write size", read_data.size(), bytes.size());
+    ASSERT_EQUAL("byte vector write content", toString(read_data), std::string("Binary data"));
+
+    RETURN_TEST("test_producer_consumer_byte_vector_write", 0);
+}
+
+int test_producer_consumer_interleaved_operations() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    producer.Write("Part1");
+    producer.Close();
+    auto r1 = consumer.Extract(3);
+    ASSERT_EQUAL("extract Par", toString(r1), std::string("Par"));
+
+    // After Extract(3), "t1" remains
+    auto r2 = consumer.Read(0);
+    ASSERT_EQUAL("remaining t1", toString(r2), std::string("t1"));
+
+    consumer.Seek(0, Position::Absolute);
+    auto r3 = consumer.Read(2);
+    ASSERT_EQUAL("after seek to start", toString(r3), std::string("t1"));
+
+    RETURN_TEST("test_producer_consumer_interleaved_operations", 0);
+}
+
+int test_producer_consumer_stress_rapid_operations() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> write_count{0};
+    std::atomic<size_t> read_count{0};
+
+    std::thread writer([&]() {
+        for (int i = 0; i < 1000; ++i) {
+            producer.Write("X");
+            write_count.fetch_add(1);
+        }
+        stop.store(true);
+    });
+
+    std::thread reader([&]() {
+        while (!stop.load() || !consumer.Empty()) {
+            auto data = consumer.Extract(1);
+            if (!data.empty()) {
+                read_count.fetch_add(data.size());
+            }
+        }
+    });
+
+    writer.join();
+    reader.join();
+
+    ASSERT_EQUAL("write count", write_count.load(), static_cast<size_t>(1000));
+    ASSERT_EQUAL("read count matches write", read_count.load(), write_count.load());
+    ASSERT_TRUE("buffer empty at end", consumer.Empty());
+
+    RETURN_TEST("test_producer_consumer_stress_rapid_operations", 0);
+}
+
+int test_producer_consumer_pipeline_pattern() {
+    // Stage 1: Producer -> Consumer1
+    Producer stage1_producer;
+    auto stage1_consumer = stage1_producer.Consumer();
+    
+    // Stage 2: Producer -> Consumer2 (fed by Consumer1)
+    Producer stage2_producer;
+    auto stage2_consumer = stage2_producer.Consumer();
+    
+    // Stage 3: Final consumer
+    Producer stage3_producer;
+    auto stage3_consumer = stage3_producer.Consumer();
+    
+    std::atomic<bool> done{false};
+    
+    // Stage 1: Generate data
+    std::thread stage1([&]() {
+        for (int i = 0; i < 100; ++i) {
+            stage1_producer.Write(std::to_string(i) + ",");
+        }
+        stage1_producer.Close();
+    });
+    
+    // Stage 2: Process (uppercase transformation simulation)
+    std::thread stage2([&]() {
+        while (true) {
+            auto data = stage1_consumer.Extract(10);
+            if (data.empty() && stage1_consumer.IsClosed()) break;
+            
+            std::string str = toString(data);
+            std::transform(str.begin(), str.end(), str.begin(), ::toupper);
+            stage2_producer.Write(str);
+        }
+        stage2_producer.Close();
+    });
+    
+    // Stage 3: Collect results
+    std::string final_result;
+    std::thread stage3([&]() {
+        while (true) {
+            auto data = stage2_consumer.Extract(10);
+            if (data.empty() && stage2_consumer.IsClosed()) break;
+            final_result.append(toString(data));
+        }
+        done.store(true);
+    });
+    
+    stage1.join();
+    stage2.join();
+    stage3.join();
+    
+    ASSERT_TRUE("pipeline completed", done.load());
+    ASSERT_TRUE("final result not empty", !final_result.empty());
+    // All numbers should be transformed (check for digit presence)
+    ASSERT_TRUE("contains digits", final_result.find('0') != std::string::npos);
+    
+    RETURN_TEST("test_producer_consumer_pipeline_pattern", 0);
+}
+
+int test_out_of_sync_partial_writes() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<bool> consumer_done{false};
+    std::string result;
+    
+    // Consumer expects 10 bytes but producer sends them in parts
+    std::thread consumer_thread([&]() {
+        auto data = consumer.Read(10); // Blocks until 10 bytes available or closed
+        result = toString(data);
+        consumer_done.store(true);
+    });
+    
+    std::thread producer_thread([&]() {
+        producer.Write("AB");  // Write 2 bytes
+        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Simulate delay
+        producer.Write("CDEFGH"); // Write 6 more bytes (total 8)
+        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Another delay
+        producer.Write("IJ"); // Write final 2 bytes (total 10)
+        producer.Close();
+    });
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    ASSERT_TRUE("consumer completed", consumer_done.load());
+    ASSERT_EQUAL("received all 10 bytes", result, std::string("ABCDEFGHIJ"));
+    ASSERT_EQUAL("size is 10", result.size(), static_cast<size_t>(10));
+    
+    RETURN_TEST("test_out_of_sync_partial_writes", 0);
+}
+
+int test_consumer_waits_for_insufficient_data() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<bool> read_started{false};
+    std::atomic<bool> read_completed{false};
+    std::string result;
+    
+    std::thread consumer_thread([&]() {
+        read_started.store(true);
+        auto data = consumer.Read(20); // Request 20 bytes
+        result = toString(data);
+        read_completed.store(true);
+    });
+    
+    // Wait for consumer to start waiting
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ASSERT_TRUE("consumer started reading", read_started.load());
+    ASSERT_FALSE("consumer still waiting", read_completed.load());
+    
+    // Producer only writes 10 bytes then closes
+    producer.Write("0123456789");
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ASSERT_FALSE("consumer still waiting for more", read_completed.load());
+    
+    producer.Close(); // Close with insufficient data
+    consumer_thread.join();
+    
+    ASSERT_TRUE("consumer completed after close", read_completed.load());
+    ASSERT_EQUAL("received available data", result, std::string("0123456789"));
+    ASSERT_EQUAL("size is 10 not 20", result.size(), static_cast<size_t>(10));
+    
+    RETURN_TEST("test_consumer_waits_for_insufficient_data", 0);
+}
+
+int test_multiple_consumers_with_partial_data() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<size_t> reads_completed{0};
+    std::vector<std::string> results(3);
+    
+    auto consumer_func = [&](int id) {
+        Consumer cons = consumer;
+        auto data = cons.Read(5); // Each wants 5 bytes
+        results[id] = toString(data);
+        reads_completed.fetch_add(1);
+    };
+    
+    std::thread cons1(consumer_func, 0);
+    std::thread cons2(consumer_func, 1);
+    std::thread cons3(consumer_func, 2);
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    ASSERT_EQUAL("all consumers waiting", reads_completed.load(), static_cast<size_t>(0));
+    
+    producer.Write("ABCDE"); // First 5 bytes
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    ASSERT_EQUAL("one consumer got data", reads_completed.load(), static_cast<size_t>(1));
+    
+    producer.Write("FGHIJ"); // Second 5 bytes
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    ASSERT_EQUAL("two consumers got data", reads_completed.load(), static_cast<size_t>(2));
+    
+    producer.Write("KLM"); // Only 3 bytes
+    producer.Close();
+    
+    cons1.join();
+    cons2.join();
+    cons3.join();
+    
+    ASSERT_EQUAL("all consumers completed", reads_completed.load(), static_cast<size_t>(3));
+    
+    // Verify all got their data
+    size_t total_received = 0;
+    for (const auto& res : results) {
+        total_received += res.size();
+        ASSERT_TRUE("each got some data", res.size() > 0);
+    }
+    ASSERT_EQUAL("total data received", total_received, static_cast<size_t>(13));
+    
+    RETURN_TEST("test_multiple_consumers_with_partial_data", 0);
+}
+
+int test_interleaved_read_extract_with_blocking() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<int> step{0};
+    std::string read_result, extract_result;
+    
+    std::thread reader([&]() {
+        step.store(1);
+        auto data = consumer.Read(5); // Non-destructive, blocks for 5 bytes
+        read_result = toString(data);
+        step.store(2);
+    });
+    
+    std::thread extractor([&]() {
+        while (step.load() < 1) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        auto data = consumer.Extract(3); // Destructive, blocks for 3 bytes
+        extract_result = toString(data);
+        step.store(3);
+    });
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    producer.Write("ABCDEFGH");
+    producer.Close();
+    
+    reader.join();
+    extractor.join();
+    
+    ASSERT_EQUAL("reader got 5 bytes", read_result.size(), static_cast<size_t>(5));
+    ASSERT_EQUAL("extractor got 3 bytes", extract_result.size(), static_cast<size_t>(3));
+    ASSERT_TRUE("both completed", step.load() >= 2);
+    
+    RETURN_TEST("test_interleaved_read_extract_with_blocking", 0);
+}
+
+int test_producer_close_during_consumer_wait() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<bool> waiting{false};
+    std::atomic<bool> completed{false};
+    std::string result;
+    
+    std::thread consumer_thread([&]() {
+        waiting.store(true);
+        auto data = consumer.Read(100); // Request way more than will be available
+        result = toString(data);
+        completed.store(true);
+    });
+    
+    // Wait for consumer to start blocking
+    while (!waiting.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    
+    // Write small amount and close immediately
+    producer.Write("Short");
+    producer.Close();
+    
+    consumer_thread.join();
+    
+    ASSERT_TRUE("consumer completed", completed.load());
+    ASSERT_EQUAL("got short data", result, std::string("Short"));
+    ASSERT_TRUE("less than requested", result.size() < 100);
+    
+    RETURN_TEST("test_producer_close_during_consumer_wait", 0);
+}
+
+int test_rapid_write_close_with_slow_consumer() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<bool> producer_done{false};
+    std::atomic<size_t> total_consumed{0};
+    
+    std::thread producer_thread([&]() {
+        for (int i = 0; i < 100; ++i) {
+            producer.Write("X");
+        }
+        producer.Close();
+        producer_done.store(true);
+    });
+    
+    std::thread consumer_thread([&]() {
+        // Intentionally slow consumer
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            auto data = consumer.Extract(5);
+            if (data.empty() && consumer.IsClosed()) break;
+            total_consumed.fetch_add(data.size());
+        }
+    });
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    ASSERT_TRUE("producer completed", producer_done.load());
+    ASSERT_EQUAL("all data consumed", total_consumed.load(), static_cast<size_t>(100));
+    
+    RETURN_TEST("test_rapid_write_close_with_slow_consumer", 0);
+}
+
+int test_extract_zero_bytes_behavior() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<bool> completed{false};
+    size_t extracted_size = 0;
+    
+    // Extract(0) should return all available data immediately without blocking
+    std::thread consumer_thread([&]() {
+        auto data = consumer.Extract(0);
+        extracted_size = data.size();
+        completed.store(true);
+    });
+    
+    producer.Write("TestData");
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    producer.Close();
+    
+    consumer_thread.join();
+    
+    ASSERT_TRUE("completed", completed.load());
+    ASSERT_EQUAL("extracted all available", extracted_size, static_cast<size_t>(8));
+    
+    RETURN_TEST("test_extract_zero_bytes_behavior", 0);
+}
+
+int test_seek_during_blocked_read() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<int> phase{0};
+    std::string result;
+    
+    std::thread reader([&]() {
+        phase.store(1);
+        auto data = consumer.Read(10); // Blocks waiting for 10 bytes
+        result = toString(data);
+        phase.store(3);
+    });
+    
+    std::thread seeker([&]() {
+        while (phase.load() < 1) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        
+        // Seek while reader is blocked
+        consumer.Seek(5, Position::Absolute);
+        phase.store(2);
+    });
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    producer.Write("0123456789ABCDEFGHIJ"); // 20 bytes
+    producer.Close();
+    
+    reader.join();
+    seeker.join();
+    
+    ASSERT_TRUE("both threads completed", phase.load() >= 2);
+    ASSERT_TRUE("got data", !result.empty());
+    
+    RETURN_TEST("test_seek_during_blocked_read", 0);
+}
+
+int test_very_large_data_transfer() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    const size_t large_size = 1024 * 1024; // 1 MB
+    std::atomic<bool> transfer_complete{false};
+    size_t received_size = 0;
+    
+    std::thread producer_thread([&]() {
+        // Write in chunks
+        const size_t chunk_size = 8192;
+        for (size_t i = 0; i < large_size; i += chunk_size) {
+            std::string chunk(chunk_size, 'A' + (i / chunk_size) % 26);
+            producer.Write(chunk);
+        }
+        producer.Close();
+    });
+    
+    std::thread consumer_thread([&]() {
+        while (true) {
+            auto data = consumer.Extract(4096);
+            if (data.empty() && consumer.IsClosed()) break;
+            received_size += data.size();
+        }
+        transfer_complete.store(true);
+    });
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    ASSERT_TRUE("transfer completed", transfer_complete.load());
+    ASSERT_EQUAL("received all data", received_size, large_size);
+    
+    RETURN_TEST("test_very_large_data_transfer", 0);
+}
+
+int test_alternating_small_large_writes() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<size_t> total_received{0};
+    std::atomic<bool> done{false};
+    
+    std::thread producer_thread([&]() {
+        for (int i = 0; i < 20; ++i) {
+            if (i % 2 == 0) {
+                producer.Write("X"); // 1 byte
+            } else {
+                producer.Write(std::string(1000, 'Y')); // 1000 bytes
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        producer.Close();
+    });
+    
+    std::thread consumer_thread([&]() {
+        while (true) {
+            auto data = consumer.Extract(100);
+            if (data.empty() && consumer.IsClosed()) break;
+            total_received.fetch_add(data.size());
+        }
+        done.store(true);
+    });
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    ASSERT_TRUE("consumer done", done.load());
+    size_t expected = 10 * 1 + 10 * 1000; // 10 small + 10 large
+    ASSERT_EQUAL("received all alternating data", total_received.load(), expected);
+    
+    RETURN_TEST("test_alternating_small_large_writes", 0);
+}
+
+int test_consumer_clear_during_production() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<int> phase{0};
+    std::atomic<bool> has_initial{false};
+    std::atomic<bool> was_cleared{false};
+    std::atomic<bool> got_after_clear{false};
+    
+    std::thread producer_thread([&]() {
+        producer.Write("InitialData");
+        phase.store(1);
+        
+        // Wait for clear
+        while (phase.load() < 2) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        
+        producer.Write("AfterClear");
+        producer.Close();
+        phase.store(3);
+    });
+    
+    std::thread consumer_thread([&]() {
+        // Wait for initial data
+        while (phase.load() < 1) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+        has_initial.store(consumer.Size() > 0);
+        consumer.Clear();
+        was_cleared.store(consumer.Empty());
+        phase.store(2);
+        
+        // Wait for new data
+        while (phase.load() < 3) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        auto data = consumer.Extract(0);
+        got_after_clear.store(toString(data) == std::string("AfterClear"));
+    });
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    ASSERT_TRUE("completed", phase.load() >= 3);
+    ASSERT_TRUE("had initial data", has_initial.load());
+    ASSERT_TRUE("was cleared", was_cleared.load());
+    ASSERT_TRUE("got data after clear", got_after_clear.load());
+    
+    RETURN_TEST("test_consumer_clear_during_production", 0);
+}
+
+int test_multiple_sequential_read_blocks() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::vector<std::string> results;
+    std::atomic<int> reads_completed{0};
+    
+    std::thread consumer_thread([&]() {
+        // Multiple blocking reads in sequence
+        for (int i = 0; i < 5; ++i) {
+            auto data = consumer.Read(4);
+            results.push_back(toString(data));
+            reads_completed.fetch_add(1);
+        }
+    });
+    
+    std::thread producer_thread([&]() {
+        for (int i = 0; i < 5; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            producer.Write(std::to_string(1000 + i)); // "1000", "1001", etc
+            
+            // Reset read position after each read
+            if (i < 4) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                consumer.Seek(0, Position::Absolute);
+            }
+        }
+        producer.Close();
+    });
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    ASSERT_EQUAL("all reads completed", reads_completed.load(), 5);
+    ASSERT_EQUAL("got all results", results.size(), static_cast<size_t>(5));
+    
+    RETURN_TEST("test_multiple_sequential_read_blocks", 0);
+}
+
+int test_burst_writes_with_reserve() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    producer.Reserve(10000); // Pre-allocate
+    
+    std::atomic<size_t> total{0};
+    
+    std::thread producer_thread([&]() {
+        // Burst write without delays
+        for (int i = 0; i < 1000; ++i) {
+            producer.Write("0123456789");
+        }
+        producer.Close();
+    });
+    
+    std::thread consumer_thread([&]() {
+        while (true) {
+            auto data = consumer.Extract(100);
+            if (data.empty() && consumer.IsClosed()) break;
+            total.fetch_add(data.size());
+        }
+    });
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    ASSERT_EQUAL("received all burst data", total.load(), static_cast<size_t>(10000));
+    
+    RETURN_TEST("test_burst_writes_with_reserve", 0);
+}
+
+int main() {
+    int result = 0;
+    
+    // Basic functionality tests
+    result += test_producer_consumer_basic_write_read();
+    result += test_producer_consumer_multiple_writes();
+    result += test_producer_consumer_extract();
+    result += test_producer_consumer_close_mechanism();
+    result += test_producer_consumer_seek_operations();
+    result += test_producer_consumer_copy_semantics();
+    result += test_producer_consumer_move_semantics();
+    result += test_producer_consumer_byte_vector_write();
+    result += test_producer_consumer_clear_operation();
+    result += test_producer_consumer_with_reserve();
+    result += test_producer_consumer_interleaved_operations();
+    
+    // Threading tests
+    result += test_single_producer_single_consumer_threaded();
+    result += test_multiple_producers_single_consumer();
+    result += test_single_producer_multiple_consumers();
+    result += test_multiple_producers_multiple_consumers();
+    result += test_producer_consumer_stress_rapid_operations();
+    result += test_producer_consumer_pipeline_pattern();
+    
+    // Complex reliability tests
+    result += test_out_of_sync_partial_writes();
+    result += test_consumer_waits_for_insufficient_data();
+    result += test_multiple_consumers_with_partial_data();
+    result += test_interleaved_read_extract_with_blocking();
+    result += test_producer_close_during_consumer_wait();
+    result += test_rapid_write_close_with_slow_consumer();
+    result += test_extract_zero_bytes_behavior();
+    result += test_seek_during_blocked_read();
+    result += test_very_large_data_transfer();
+    result += test_alternating_small_large_writes();
+    result += test_consumer_clear_during_production();
+    result += test_multiple_sequential_read_blocks();
+    result += test_burst_writes_with_reserve();
+
+    if (result == 0) {
+        std::cout << "All Producer/Consumer tests passed!" << std::endl;
+    } else {
+        std::cout << result << " Producer/Consumer test(s) failed." << std::endl;
+    }
+    return result;
+}

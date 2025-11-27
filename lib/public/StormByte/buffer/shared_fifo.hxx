@@ -9,7 +9,7 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
- * The Buffer namespace provides classes and utilities for diferent buffers
+ * The Buffer namespace provides classes and utilities for different buffer types.
  */
 namespace StormByte::Buffer {
     /**
@@ -72,50 +72,68 @@ namespace StormByte::Buffer {
              * @{
              */
             /**
-             * @brief Thread-safe version.
+             * @brief Thread-safe version of FIFO::Capacity().
+             * @return The current allocated capacity in bytes.
              * @see FIFO::Capacity()
              */
             std::size_t Capacity() const noexcept override;
 
             /**
-             * @brief Thread-safe version.
+             * @brief Thread-safe version of FIFO::Clear().
+             * @details Clears all data and notifies waiting threads.
              * @see FIFO::Clear()
              */
             void Clear() noexcept override;
 
             /**
-             * @brief Thread-safe version.
+             * @brief Thread-safe version of FIFO::Reserve().
+             * @param newCapacity Minimum capacity to ensure (in bytes).
              * @see FIFO::Reserve()
              */
             void Reserve(std::size_t newCapacity) override;
 
             /**
-             * @brief Thread-safe version.
+             * @brief Thread-safe version of FIFO::Write().
+             * @param data Byte vector to append.
+             * @details Notifies waiting consumers after writing.
              * @see FIFO::Write()
              */
             void Write(const std::vector<std::byte>& data) override;
 
             /**
-             * @brief Thread-safe version.
+             * @brief Thread-safe version of FIFO::Write().
+             * @param data String to append.
+             * @details Notifies waiting consumers after writing.
              * @see FIFO::Write()
              */
             void Write(const std::string& data);
 
             /**
-             * @brief Thread-safe version.
-             * @see FIFO::Read()
+             * @brief Thread-safe blocking version of FIFO::Read().
+             * @param count Number of bytes to read; 0 reads all available without blocking.
+             * @return A vector containing the requested bytes.
+             * @details **Blocks** until count bytes are available or buffer is closed.
+             *          If count=0, returns immediately with available data.
+             * @see FIFO::Read(), Consumer::Read()
              */
             std::vector<std::byte> Read(std::size_t count = 0) override;
-			
+
             /**
-             * @brief Thread-safe version.
-             * @see FIFO::Extract()
+             * @brief Thread-safe blocking version of FIFO::Extract().
+             * @param count Number of bytes to extract; 0 extracts all available without blocking.
+             * @return A vector containing the extracted bytes.
+             * @details **Blocks** until count bytes are available or buffer is closed.
+             *          If count=0, returns immediately with available data.
+             * @see FIFO::Extract(), Consumer::Extract()
              */
             std::vector<std::byte> Extract(std::size_t count = 0) override;
             /** @} */
 
             /**
-             * @brief Thread-safe version.
+             * @brief Thread-safe version of FIFO::Seek().
+             * @param position The offset value to apply.
+             * @param mode Position::Absolute or Position::Relative.
+             * @details Notifies waiting readers after seeking.
              * @see FIFO::Seek()
              */
             void Seek(const std::size_t& position, const Position& mode) override;
