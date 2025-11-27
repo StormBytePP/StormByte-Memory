@@ -538,11 +538,11 @@ int test_fifo_available_bytes_with_wrap() {
     ASSERT_EQUAL("initial available", fifo.AvailableBytes(), static_cast<std::size_t>(8));
     
     // Read 3, position at 3
-    fifo.Read(3);
+    [[maybe_unused]] auto r1 = fifo.Read(3);
     ASSERT_EQUAL("after read 3", fifo.AvailableBytes(), static_cast<std::size_t>(5));
     
     // Extract 4, removes ABCD, head now at E, read position adjusted to 0
-    fifo.Extract(4);
+    [[maybe_unused]] auto e1 = fifo.Extract(4);
     ASSERT_EQUAL("after extract 4", fifo.AvailableBytes(), static_cast<std::size_t>(4));
     
     // Write more causing wrap
@@ -550,7 +550,7 @@ int test_fifo_available_bytes_with_wrap() {
     ASSERT_EQUAL("after wrap write", fifo.AvailableBytes(), static_cast<std::size_t>(8));
     
     // Read some
-    fifo.Read(5);
+    [[maybe_unused]] auto r2 = fifo.Read(5);
     ASSERT_EQUAL("after read 5", fifo.AvailableBytes(), static_cast<std::size_t>(3));
     
     RETURN_TEST("test_fifo_available_bytes_with_wrap", 0);

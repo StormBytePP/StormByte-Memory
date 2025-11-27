@@ -112,7 +112,7 @@ namespace StormByte::Buffer {
      *
      * @see PipeFunction, Consumer, Producer, SharedFIFO
      */
-    class STORMBYTE_PUBLIC Pipeline final {
+    class STORMBYTE_BUFFER_PUBLIC Pipeline final {
         public:
             /**
              * @brief Default constructor
