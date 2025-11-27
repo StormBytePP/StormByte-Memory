@@ -72,6 +72,16 @@ namespace StormByte::Buffer {
              * @name Thread-safe overrides
              * @{
              */
+
+            /**
+             * @brief Thread-safe version of FIFO::AvailableBytes().
+             * @return The number of bytes available for non-destructive reading.
+             * @details Returns the number of bytes that can be read from the current
+             *          read position without blocking. Thread-safe.
+             * @see FIFO::AvailableBytes()
+             */
+            std::size_t AvailableBytes() const noexcept;
+
             /**
              * @brief Thread-safe version of FIFO::Capacity().
              * @return The current allocated capacity in bytes.

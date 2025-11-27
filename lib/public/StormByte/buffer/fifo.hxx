@@ -77,6 +77,19 @@ namespace StormByte::Buffer {
 			FIFO& operator=(FIFO&& other) noexcept;
 
 			/**
+			 * @brief Get the number of bytes available for non-destructive reading.
+			 * @return The number of bytes that can be read from the current read position
+			 *         without blocking or advancing the buffer.
+			 * @details Returns the difference between the total buffer size and the current
+			 *          read position. This is the amount of data available for Read() operations
+			 *          starting from the current read position. Does not include data that has
+			 *          already been read past via previous Read() calls unless Seek() is used
+			 *          to reposition.
+			 * @see Size(), Read(), Seek()
+			 */
+			virtual std::size_t AvailableBytes() const noexcept;
+
+			/**
 			 * @brief Get the current number of bytes stored in the buffer.
 			 * @return The total number of bytes available for reading.
 			 * @see Capacity(), Empty()

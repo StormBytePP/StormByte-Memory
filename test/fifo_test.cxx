@@ -486,6 +486,76 @@ int test_fifo_read_after_position_beyond_size() {
     RETURN_TEST("test_fifo_read_after_position_beyond_size", 0);
 }
 
+int test_fifo_available_bytes() {
+    FIFO fifo;
+    
+    // Empty buffer
+    ASSERT_EQUAL("empty available", fifo.AvailableBytes(), static_cast<std::size_t>(0));
+    
+    // Write some data
+    fifo.Write("ABCDEFGHIJ"); // 10 bytes
+    ASSERT_EQUAL("after write available", fifo.AvailableBytes(), static_cast<std::size_t>(10));
+    
+    // Non-destructive read moves position
+    auto r1 = fifo.Read(3);
+    ASSERT_EQUAL("after read 3", fifo.AvailableBytes(), static_cast<std::size_t>(7));
+    
+    // Another read
+    auto r2 = fifo.Read(2);
+    ASSERT_EQUAL("after read 2 more", fifo.AvailableBytes(), static_cast<std::size_t>(5));
+    
+    // Seek back to beginning
+    fifo.Seek(0, Position::Absolute);
+    ASSERT_EQUAL("after seek to 0", fifo.AvailableBytes(), static_cast<std::size_t>(10));
+    
+    // Seek to middle
+    fifo.Seek(4, Position::Absolute);
+    ASSERT_EQUAL("after seek to 4", fifo.AvailableBytes(), static_cast<std::size_t>(6));
+    
+    // Extract removes data from head
+    auto e1 = fifo.Extract(3); // Remove ABC, leaving DEFGHIJ (7 bytes)
+    // Read position was at 4, now adjusted to 1 (4-3)
+    // Available: 7 - 1 = 6
+    ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), static_cast<std::size_t>(6));
+    
+    // Read all remaining from current position
+    auto r3 = fifo.Read(0);
+    ASSERT_EQUAL("after reading all remaining", fifo.AvailableBytes(), static_cast<std::size_t>(0));
+    
+    // Extract all
+    fifo.Seek(0, Position::Absolute);
+    auto e2 = fifo.Extract(0);
+    ASSERT_EQUAL("after extract all", fifo.AvailableBytes(), static_cast<std::size_t>(0));
+    ASSERT_TRUE("buffer empty", fifo.Empty());
+    
+    RETURN_TEST("test_fifo_available_bytes", 0);
+}
+
+int test_fifo_available_bytes_with_wrap() {
+    FIFO fifo(8);
+    
+    fifo.Write("ABCDEFGH");
+    ASSERT_EQUAL("initial available", fifo.AvailableBytes(), static_cast<std::size_t>(8));
+    
+    // Read 3, position at 3
+    fifo.Read(3);
+    ASSERT_EQUAL("after read 3", fifo.AvailableBytes(), static_cast<std::size_t>(5));
+    
+    // Extract 4, removes ABCD, head now at E, read position adjusted to 0
+    fifo.Extract(4);
+    ASSERT_EQUAL("after extract 4", fifo.AvailableBytes(), static_cast<std::size_t>(4));
+    
+    // Write more causing wrap
+    fifo.Write("1234");
+    ASSERT_EQUAL("after wrap write", fifo.AvailableBytes(), static_cast<std::size_t>(8));
+    
+    // Read some
+    fifo.Read(5);
+    ASSERT_EQUAL("after read 5", fifo.AvailableBytes(), static_cast<std::size_t>(3));
+    
+    RETURN_TEST("test_fifo_available_bytes_with_wrap", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -516,6 +586,8 @@ int main() {
     result += test_fifo_read_insufficient_data_error();
     result += test_fifo_extract_insufficient_data_error();
     result += test_fifo_read_after_position_beyond_size();
+    result += test_fifo_available_bytes();
+    result += test_fifo_available_bytes_with_wrap();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

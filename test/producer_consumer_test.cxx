@@ -1026,6 +1026,90 @@ int test_burst_writes_with_reserve() {
     RETURN_TEST("test_burst_writes_with_reserve", 0);
 }
 
+int test_producer_consumer_available_bytes() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    // Empty consumer
+    ASSERT_EQUAL("empty available", consumer.AvailableBytes(), static_cast<std::size_t>(0));
+    
+    // Write data
+    producer.Write("TEST DATA"); // 9 bytes
+    ASSERT_EQUAL("after write available", consumer.AvailableBytes(), static_cast<std::size_t>(9));
+    
+    // Read moves position
+    auto r1 = consumer.Read(4);
+    ASSERT_EQUAL("after read 4 available", consumer.AvailableBytes(), static_cast<std::size_t>(5));
+    
+    // Seek back
+    consumer.Seek(0, Position::Absolute);
+    ASSERT_EQUAL("after seek to start", consumer.AvailableBytes(), static_cast<std::size_t>(9));
+    
+    // Extract removes data
+    auto e1 = consumer.Extract(3);
+    ASSERT_EQUAL("after extract 3", consumer.AvailableBytes(), static_cast<std::size_t>(6));
+    
+    // Producer writes more
+    producer.Write("MORE"); // 4 bytes
+    ASSERT_EQUAL("after more writes", consumer.AvailableBytes(), static_cast<std::size_t>(10));
+    
+    // Read all available
+    auto r2 = consumer.Read(0);
+    ASSERT_EQUAL("after read all", consumer.AvailableBytes(), static_cast<std::size_t>(0));
+    
+    // Extract all remaining
+    consumer.Seek(0, Position::Absolute);
+    auto e2 = consumer.Extract(0);
+    ASSERT_EQUAL("after extract all", consumer.AvailableBytes(), static_cast<std::size_t>(0));
+    ASSERT_TRUE("consumer empty", consumer.Empty());
+    
+    RETURN_TEST("test_producer_consumer_available_bytes", 0);
+}
+
+int test_producer_consumer_available_bytes_threaded() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+    
+    std::atomic<bool> producer_done{false};
+    std::atomic<std::size_t> max_available{0};
+    
+    // Producer thread
+    std::thread prod_thread([&]() {
+        for (int i = 0; i < 20; ++i) {
+            producer.Write("CHUNK");
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        producer_done.store(true);
+        producer.Close();
+    });
+    
+    // Consumer thread that monitors AvailableBytes
+    std::thread cons_thread([&]() {
+        while (!producer_done.load() || consumer.AvailableBytes() > 0) {
+            std::size_t available = consumer.AvailableBytes();
+            
+            // Track maximum available
+            std::size_t current_max = max_available.load();
+            while (available > current_max && 
+                   !max_available.compare_exchange_weak(current_max, available)) {}
+            
+            if (available >= 10) {
+                auto data = consumer.Extract(10);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    });
+    
+    prod_thread.join();
+    cons_thread.join();
+    
+    ASSERT_TRUE("producer completed", producer_done.load());
+    ASSERT_TRUE("max available tracked", max_available.load() > 0);
+    ASSERT_EQUAL("final available is 0", consumer.AvailableBytes(), static_cast<std::size_t>(0));
+    
+    RETURN_TEST("test_producer_consumer_available_bytes_threaded", 0);
+}
+
 int main() {
     int result = 0;
     
@@ -1064,6 +1148,8 @@ int main() {
     result += test_consumer_clear_during_production();
     result += test_multiple_sequential_read_blocks();
     result += test_burst_writes_with_reserve();
+    result += test_producer_consumer_available_bytes();
+    result += test_producer_consumer_available_bytes_threaded();
 
     if (result == 0) {
         std::cout << "All Producer/Consumer tests passed!" << std::endl;

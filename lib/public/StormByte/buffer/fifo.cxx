@@ -46,6 +46,12 @@ FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	return *this;
 }
 
+std::size_t FIFO::AvailableBytes() const noexcept {
+	const std::size_t current_size = m_size.load();
+	const std::size_t read_pos = m_read_position.load();
+	return (read_pos <= current_size) ? (current_size - read_pos) : 0;
+}
+
 std::size_t FIFO::Capacity() const noexcept {
 	return m_buffer.size();
 }

@@ -2,6 +2,11 @@
 
 using namespace StormByte::Buffer;
 
+std::size_t SharedFIFO::AvailableBytes() const noexcept {
+    std::scoped_lock<std::mutex> lock(m_mutex);
+    return FIFO::AvailableBytes();
+}
+
 std::size_t SharedFIFO::Capacity() const noexcept {
     std::scoped_lock<std::mutex> lock(m_mutex);
     return FIFO::Capacity();

@@ -76,6 +76,16 @@ namespace StormByte::Buffer {
             ~Consumer() = default;
 
 			/**
+			 * @brief Get the number of bytes available for non-blocking read.
+			 * @return The number of bytes that can be read from the current read position
+			 *         without blocking.
+			 * @details Returns the amount of data available for immediate Read() operations.
+			 *          Useful for checking if data is available before attempting a blocking read.
+			 * @see SharedFIFO::AvailableBytes(), Size(), Read()
+			 */
+			inline std::size_t AvailableBytes() const noexcept { return m_buffer->AvailableBytes(); }
+
+			/**
 			 * @brief Get the current number of bytes stored in the buffer.
 			 * @return The total number of bytes available for reading.
 			 * @see SharedFIFO::Size(), Empty()

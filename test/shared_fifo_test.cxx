@@ -345,6 +345,68 @@ int test_shared_fifo_blocking_read_insufficient_not_closed() {
     RETURN_TEST("test_shared_fifo_blocking_read_insufficient_not_closed", 0);
 }
 
+int test_shared_fifo_available_bytes_basic() {
+    SharedFIFO fifo;
+    
+    // Empty buffer
+    ASSERT_EQUAL("empty available", fifo.AvailableBytes(), static_cast<std::size_t>(0));
+    
+    // Write data
+    fifo.Write("HELLO WORLD"); // 11 bytes
+    ASSERT_EQUAL("after write", fifo.AvailableBytes(), static_cast<std::size_t>(11));
+    
+    // Read non-destructively
+    auto r1 = fifo.Read(5);
+    ASSERT_EQUAL("after read 5", fifo.AvailableBytes(), static_cast<std::size_t>(6));
+    
+    // Seek changes available bytes
+    fifo.Seek(2, Position::Absolute);
+    ASSERT_EQUAL("after seek to 2", fifo.AvailableBytes(), static_cast<std::size_t>(9));
+    
+    // Extract removes data
+    auto e1 = fifo.Extract(3);
+    ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), static_cast<std::size_t>(8));
+    
+    RETURN_TEST("test_shared_fifo_available_bytes_basic", 0);
+}
+
+int test_shared_fifo_available_bytes_concurrent() {
+    SharedFIFO fifo;
+    std::atomic<std::size_t> available_checks{0};
+    std::atomic<bool> done{false};
+    
+    // Writer thread
+    std::thread writer([&]() -> void {
+        for (int i = 0; i < 10; ++i) {
+            fifo.Write("DATA");
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        done.store(true);
+        fifo.Close();
+    });
+    
+    // Reader thread that checks AvailableBytes
+    std::thread reader([&]() -> void {
+        while (!done.load() || !fifo.Empty()) {
+            std::size_t available = fifo.AvailableBytes();
+            if (available > 0) {
+                auto data = fifo.Extract(0);
+                available_checks.fetch_add(1);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        }
+    });
+    
+    writer.join();
+    reader.join();
+    
+    ASSERT_TRUE("available checked multiple times", available_checks.load() > 0);
+    ASSERT_TRUE("buffer empty at end", fifo.Empty());
+    ASSERT_EQUAL("no bytes available", fifo.AvailableBytes(), static_cast<std::size_t>(0));
+    
+    RETURN_TEST("test_shared_fifo_available_bytes_concurrent", 0);
+}
+
 int main() {
     int result = 0;
     result += test_shared_fifo_producer_consumer_blocking();
@@ -359,6 +421,8 @@ int main() {
     result += test_shared_fifo_read_insufficient_closed_returns_available();
     result += test_shared_fifo_extract_insufficient_closed_returns_available();
     result += test_shared_fifo_blocking_read_insufficient_not_closed();
+    result += test_shared_fifo_available_bytes_basic();
+    result += test_shared_fifo_available_bytes_concurrent();
 
     if (result == 0) {
         std::cout << "SharedFIFO tests passed!" << std::endl;
