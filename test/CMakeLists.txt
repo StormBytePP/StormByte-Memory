@@ -11,5 +11,9 @@ if(ENABLE_TEST AND NOT STORMBYTE_AS_DEPENDENCY)
 	add_executable(ProducerConsumerTests producer_consumer_test.cxx)
 	target_link_libraries(ProducerConsumerTests StormByte-Buffer)
 	add_test(NAME ProducerConsumerTests COMMAND ProducerConsumerTests)
+
+	add_executable(PipelineTests pipeline_test.cxx)
+	target_link_libraries(PipelineTests StormByte-Buffer)
+	add_test(NAME PipelineTests COMMAND PipelineTests)
 	
 endif()
