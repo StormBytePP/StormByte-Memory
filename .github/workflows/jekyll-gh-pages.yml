@@ -17,5 +17,5 @@ jobs:
       pages: write
       id-token: write
     with:
-      doc_target: StormByteDatabaseDoc
+      doc_target: StormByteBufferDoc
       docs_source_dir: './docs'

@@ -1,8 +1,8 @@
-#include <StormByte/memory/buffer/fifo.hxx>
+#include <StormByte/buffer/fifo.hxx>
 
 #include <algorithm>
 
-using namespace StormByte::Memory::Buffer;
+using namespace StormByte::Buffer;
 
 FIFO::FIFO(std::size_t capacity) noexcept: m_buffer(capacity), m_initialCapacity(capacity), m_head(0), m_tail(0), m_size(0) {}
 

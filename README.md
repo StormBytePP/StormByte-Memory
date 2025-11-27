@@ -4,7 +4,7 @@ StormByte is a comprehensive, cross-platform C++ library aimed at easing system 
 
 ## Features
 
-- **System Operations**: Handles pipes, processes, and system variables seamlessly across different platforms.
+- **Buffer Operations**: Handles different typesd of buffers
 
 ## Table of Contents
 
@@ -12,10 +12,10 @@ StormByte is a comprehensive, cross-platform C++ library aimed at easing system 
 - [Installation](#Installation)
 - [Modules](#Modules)
 	- [Base](https://dev.stormbyte.org/StormByte)
+	- **Buffer**
 	- [Config](https://dev.stormbyte.org/StormByte-Config)
 	- [Crypto](https://dev.stormbyte.org/StormByte-Crypto)
 	- [Database](https://dev.stormbyte.org/StormByte-Database)
-	- **Memory**
 	- [Multimedia](https://dev.stormbyte.org/StormByte-Multimedia)
 	- [Network](https://dev.stormbyte.org/StormByte-Network)
 	- [System](https://dev.stormbyte.org/StormByte-System)
@@ -24,7 +24,7 @@ StormByte is a comprehensive, cross-platform C++ library aimed at easing system 
 
 ## Repository
 
-You can visit the code repository at [GitHub](https://github.com/StormBytePP/StormByte-Memory)
+You can visit the code repository at [GitHub](https://github.com/StormBytePP/StormByte-Buffer)
 
 ## Installation
 
@@ -40,8 +40,8 @@ Ensure you have the following installed:
 To build the library, follow these steps:
 
 ```sh
-git clone https://github.com/StormBytePP/StormByte-Memory.git
-cd StormByte-Memory
+git clone https://github.com/StormBytePP/StormByte-Buffer.git
+cd StormByte-Buffer
 mkdir build
 cd build
 cmake ..
@@ -50,7 +50,7 @@ make
 
 ## Modules
 
-### Memory
+### Buffer
 
 #### FIFO (Ring Buffer)
 
@@ -61,12 +61,12 @@ make
 Usage example:
 
 ```cpp
-#include <StormByte/memory/buffer/fifo.hxx>
+#include <StormByte/buffer/fifo.hxx>
 #include <string>
 #include <vector>
 #include <cstddef>
 
-using StormByte::Memory::Buffer::FIFO;
+using StormByte::Buffer::Buffer::FIFO;
 
 int main() {
 	FIFO fifo(16);                   // start with 16-byte capacity
@@ -81,7 +81,7 @@ int main() {
 	std::string s(reinterpret_cast<const char*>(out.data()), out.size());
 	// s == "Hello World"
 
-	// Memory behavior helpers
+	// Buffer behavior helpers
 	fifo.Clear();                    // empties and restores capacity to 16
 	fifo.Reserve(64);                // ensure capacity is at least 64
 }

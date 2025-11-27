@@ -4,10 +4,10 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-project("StormByte C++ Library: Memory module"
+project("StormByte C++ Library: Buffer module"
 	VERSION 0.0.9999
-	DESCRIPTION "StormByte-Memory is a StormByte library module for handling memory"
-	HOMEPAGE_URL "https://dev.stormbyte.org/StormByte-Memory"
+	DESCRIPTION "StormByte-Buffer is a StormByte library module for handling buffers"
+	HOMEPAGE_URL "https://dev.stormbyte.org/StormByte-Buffer"
 )
 
 enable_testing()

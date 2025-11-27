@@ -1,4 +1,4 @@
-#include <StormByte/memory/buffer/fifo.hxx>
+#include <StormByte/buffer/fifo.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <iostream>
@@ -6,8 +6,7 @@
 #include <string>
 #include <random>
 
-using namespace StormByte;
-using StormByte::Memory::Buffer::FIFO;
+using StormByte::Buffer::FIFO;
 
 int test_fifo_write_read_vector() {
     FIFO fifo(2);
@@ -46,7 +45,7 @@ static std::string makePattern(std::size_t n) {
     return s;
 }
 
-int test_fifo_memory_stress() {
+int test_fifo_buffer_stress() {
     FIFO fifo(64);
     std::mt19937_64 rng(12345);
     std::uniform_int_distribution<int> small(1, 256);
@@ -86,7 +85,7 @@ int test_fifo_memory_stress() {
     std::string got(reinterpret_cast<const char*>(out.data()), out.size());
     ASSERT_EQUAL("stress final drain", got, expected);
     ASSERT_TRUE("stress empty", fifo.Empty());
-    RETURN_TEST("test_fifo_memory_stress", 0);
+    RETURN_TEST("test_fifo_buffer_stress", 0);
 }
 
 int test_fifo_default_ctor() {
@@ -262,8 +261,8 @@ int main() {
     result += test_fifo_closed_noop_on_empty();
     result += test_fifo_closed_noop_on_nonempty();
 
-    // Memory stress test
-    result += test_fifo_memory_stress();
+    // Buffer stress test
+    result += test_fifo_buffer_stress();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

@@ -1,15 +1,6 @@
-/**
- * @file fifo.hxx
- * @brief Ring buffer FIFO for byte-oriented data.
- * @details Provides a fixed-capacity, growable ring buffer storing @c std::byte.
- *          Supports wrap-aware writes, partial/full reads, zero-copy fast path
- *          for contiguous full reads, and memory policy to restore initial
- *          capacity on clear. Designed for efficient buffering in memory-bound
- *          workflows where minimal copies are desired.
- */
 #pragma once
 
-#include <StormByte/memory/visibility.h>
+#include <StormByte/buffer/visibility.h>
 
 #include <atomic>
 #include <concepts>
@@ -22,9 +13,9 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
- * The Buffer namespace provides classes and utilities for managing different type of buffers 
+ * The Buffer namespace provides classes and utilities for diferent buffers
  */
-namespace StormByte::Memory::Buffer {
+namespace StormByte::Buffer {
 	/**
 	 * @class FIFO
 	 * @brief Byte-oriented ring buffer with grow-on-demand.
@@ -32,13 +23,13 @@ namespace StormByte::Memory::Buffer {
 	 *  A circular buffer implemented atop @c std::vector<std::byte> that tracks
 	 *  head/tail indices and current size. It grows geometrically to fit writes
 	 *  and supports efficient reads even across wrap boundaries.
-	 * @par Memory behavior
+	 * @par Buffer behavior
 	 *  The constructor-requested capacity is remembered and restored by @ref Clear().
 	 *  When empty, an rvalue @ref Write(std::vector<std::byte>&&) adopts storage
 	 *  wholesale to avoid copies. Reading the entire content when it is contiguous
 	 *  (head == 0) uses a zero-copy fast path via move.
 	 */
-	class STORMBYTE_MEMORY_PUBLIC FIFO {
+	class STORMBYTE_BUFFER_PUBLIC FIFO {
 		public:
 			/**
 			 * 	@brief Construct FIFO with optional initial capacity.
