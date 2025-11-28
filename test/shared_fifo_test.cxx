@@ -34,7 +34,7 @@ int test_shared_fifo_producer_consumer_blocking() {
     std::thread consumer([&]() -> void {
         while (true) {
             auto part = fifo.Read(3); // read small chunks, blocks until 3 available or closed
-            if (!part || (part->empty() && fifo.IsClosed())) break;
+            if (!part || (part->empty() && fifo.EoF())) break;
             collected.append(toString(*part));
             // small delay to increase interleaving
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -52,15 +52,15 @@ int test_shared_fifo_producer_consumer_blocking() {
 int test_shared_fifo_extract_blocking_and_close() {
     SharedFIFO fifo;
     std::atomic<bool> woke{false};
-    std::atomic<bool> saw_closed{false};
-    std::size_t extracted_size = 12345; // sentinel
+    std::atomic<bool> saw_writable{false};
+    std::size_t extracted_size = 1234; // sentinel
 
     std::thread t([&]() -> void {
         auto out = fifo.Extract(1); // block until 1 byte or close
-        // With no writer, Close() will wake us; out should be empty or error
+        // With no writer, Close() will wake us; out should be error or empty
         woke.store(true);
-        saw_closed.store(fifo.IsClosed());
-        extracted_size = out.has_value() ? out->size() : 0;
+        saw_writable.store(fifo.IsWritable());
+        extracted_size = out ? out->size() : 0;
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -68,8 +68,8 @@ int test_shared_fifo_extract_blocking_and_close() {
     t.join();
 
     ASSERT_TRUE("thread woke on close", woke.load());
-    ASSERT_TRUE("extract woke closed", saw_closed.load());
-    ASSERT_EQUAL("no data extracted", extracted_size, static_cast<std::size_t>(0));
+    ASSERT_FALSE("extract woke writable", saw_writable.load());
+    ASSERT_EQUAL("got error on read", extracted_size, 0);
     RETURN_TEST("test_shared_fifo_extract_blocking_and_close", 0);
 }
 
@@ -165,7 +165,7 @@ int test_shared_fifo_multi_producer_single_consumer_counts() {
     auto consumer = std::thread([&]() -> void {
         while (true) {
             auto part = fifo.Extract(1); // block for each byte
-            if (!part || (part->empty() && fifo.IsClosed())) break;
+            if (!part || (part->empty() && fifo.EoF())) break;
             collected.append(toString(*part));
         }
     });
@@ -199,7 +199,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
         size_t local = 0;
         while (true) {
             auto part = fifo.Extract(1);
-            if (!part || (part->empty() && fifo.IsClosed())) break;
+            if (!part || (part->empty() && fifo.EoF())) break;
             local += part->size();
         }
         c1.store(local);
@@ -208,7 +208,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
         size_t local = 0;
         while (true) {
             auto part = fifo.Extract(1);
-            if (!part || (part->empty() && fifo.IsClosed())) break;
+            if (!part || (part->empty() && fifo.EoF())) break;
             local += part->size();
         }
         c2.store(local);
@@ -268,7 +268,7 @@ int test_shared_fifo_growth_under_contention() {
     auto consumer = std::thread([&]() -> void {
         while (true) {
             auto part = fifo.Extract(128);
-            if (!part || (part->empty() && fifo.IsClosed())) break;
+            if (!part || (part->empty() && fifo.EoF())) break;
             consumed += part->size();
         }
     });
@@ -410,7 +410,7 @@ int test_shared_fifo_available_bytes_concurrent() {
 int test_shared_fifo_read_closed_no_data_nonblocking() {
     SharedFIFO fifo;
     fifo.Close();
-    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_FALSE("fifo is writable", fifo.IsWritable());
     ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
     
     // Calling Read on already-closed empty FIFO should return empty vector (since it returns immediately)
@@ -426,7 +426,7 @@ int test_shared_fifo_read_closed_no_data_nonblocking() {
 int test_shared_fifo_extract_closed_no_data_nonblocking() {
     SharedFIFO fifo;
     fifo.Close();
-    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_FALSE("fifo is writable", fifo.IsWritable());
     ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
     
     auto result = fifo.Extract(10);

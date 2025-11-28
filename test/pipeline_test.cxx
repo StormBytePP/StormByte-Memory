@@ -28,7 +28,7 @@ using StormByte::Buffer::Consumer;
 
 // Helper to wait for pipeline completion without arbitrary sleeps
 void wait_for_pipeline_completion(Consumer& consumer) {
-    while (!consumer.IsClosed()) {
+    while (consumer.IsWritable()) {
         std::this_thread::yield();
     }
 }
@@ -57,7 +57,7 @@ int test_pipeline_single_stage() {
     
     // Single stage: uppercase transformation
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -88,7 +88,7 @@ int test_pipeline_two_stages() {
     
     // Stage 1: uppercase
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -101,7 +101,7 @@ int test_pipeline_two_stages() {
     
     // Stage 2: replace spaces with underscores
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -132,7 +132,7 @@ int test_pipeline_three_stages() {
     
     // Stage 1: uppercase
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -145,7 +145,7 @@ int test_pipeline_three_stages() {
     
     // Stage 2: replace spaces
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -159,7 +159,7 @@ int test_pipeline_three_stages() {
     // Stage 3: add prefix and suffix
     pipeline.AddPipe([](Consumer in, Producer out) {
         out.Write("[");
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
@@ -189,7 +189,7 @@ int test_pipeline_incremental_processing() {
     
     // Stage that processes data incrementally
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 1); // Read one byte at a time
             if (data && !data->empty()) {
                 char c = static_cast<char>((*data)[0]);
@@ -220,7 +220,7 @@ int test_pipeline_filter_stage() {
     
     // Stage that filters out non-alphabetic characters
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -258,7 +258,7 @@ int test_pipeline_multiple_writes() {
     
     // Stage that duplicates each piece of data
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
@@ -287,7 +287,7 @@ int test_pipeline_empty_input() {
     Pipeline pipeline;
     
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
@@ -316,7 +316,7 @@ int test_pipeline_large_data() {
     // Stage that counts characters
     pipeline.AddPipe([](Consumer in, Producer out) {
         std::size_t count = 0;
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 count += data->size();
@@ -349,7 +349,7 @@ int test_pipeline_reuse() {
     // Stage that adds prefix
     pipeline.AddPipe([](Consumer in, Producer out) {
         out.Write(">");
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
@@ -393,7 +393,7 @@ int test_pipeline_copy_constructor() {
     Pipeline pipeline1;
     
     pipeline1.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -426,7 +426,7 @@ int test_pipeline_move_constructor() {
     Pipeline pipeline1;
     
     pipeline1.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
@@ -459,7 +459,7 @@ int test_pipeline_addpipe_move() {
     Pipeline pipeline;
     
     auto func = [](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
@@ -494,7 +494,7 @@ int test_pipeline_word_count() {
         std::size_t word_count = 0;
         std::string buffer;
         
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 buffer += StormByte::String::FromByteVector(*data);
@@ -537,7 +537,7 @@ int test_pipeline_reverse_string() {
     pipeline.AddPipe([](Consumer in, Producer out) {
         std::string buffer;
         
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 buffer += StormByte::String::FromByteVector(*data);
@@ -569,7 +569,7 @@ int test_pipeline_streaming_data() {
     
     // Pass through with small delay to simulate processing
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
@@ -609,7 +609,7 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 1: Add 1 to each byte
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -625,7 +625,7 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 2: Multiply by 2
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -641,7 +641,7 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 3: Divide by 2
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -657,7 +657,7 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 4: Subtract 1
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -703,7 +703,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 1: XOR with 0x55
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -719,7 +719,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 2: Add 17 to each byte
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -735,7 +735,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 3: NOT (bitwise complement)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -751,7 +751,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 4: XOR with 0xAA
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -767,7 +767,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 5: Multiply by 3 (mod 256)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -783,7 +783,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 6: Rotate left by 3 bits
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -800,7 +800,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 7: Subtract 42
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -816,7 +816,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 8: XOR with 0x33
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -832,7 +832,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 9: UNDO - XOR with 0x33 (XOR is self-inverse)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -848,7 +848,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 10: UNDO - Add 42 (reverse of subtract 42)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -864,7 +864,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 11: UNDO - Rotate right by 3 bits (reverse of rotate left)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -881,7 +881,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 12: UNDO - Multiply by 171 (modular inverse of 3 mod 256)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -897,7 +897,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 13: UNDO - XOR with 0xAA (XOR is self-inverse)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -913,7 +913,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 14: UNDO - NOT (bitwise complement is self-inverse)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -929,7 +929,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 15: UNDO - Subtract 17 (reverse of add 17)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
@@ -945,7 +945,7 @@ int test_pipeline_large_concurrent_stress() {
     
     // Stage 16: UNDO - XOR with 0x55 (XOR is self-inverse)
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+        while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;

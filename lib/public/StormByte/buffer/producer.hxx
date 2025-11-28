@@ -68,9 +68,26 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Close the buffer for further writes.
 			 * @details Marks buffer as closed. Subsequent writes ignored. Wakes waiting consumers.
-			 * @see SharedFIFO::Close(), Consumer::IsClosed()
+			 *          The buffer remains readable until all data is consumed.
+			 * @see SharedFIFO::Close(), IsWritable()
 			 */
 			inline void Close() noexcept { m_buffer->Close(); }
+
+			/**
+			 * @brief Mark the buffer as erroneous, making it unreadable and unwritable.
+			 * @details Sets the error state on the buffer. Subsequent writes will be ignored,
+			 *          and consumers' read operations will fail. Wakes all waiting threads.
+			 * @see SharedFIFO::SetError(), IsWritable(), Consumer::IsReadable()
+			 */
+			inline void SetError() noexcept { m_buffer->SetError(); }
+
+			/**
+			 * @brief Check if the buffer is writable (not closed and not in error state).
+			 * @return true if writable, false if closed or in error state.
+			 * @details A buffer becomes unwritable via Close() or SetError().
+			 * @see Close(), SetError(), SharedFIFO::IsWritable()
+			 */
+			inline bool IsWritable() const noexcept { return m_buffer->IsWritable(); }
 
 			/**
 			 * @brief Write bytes to the buffer.
@@ -78,7 +95,7 @@ namespace StormByte::Buffer {
 			 * @details Appends data to buffer. Ignored if closed. Notifies waiting consumers.
 			 * @see SharedFIFO::Write(), Close()
 			 */
-			inline void Write(const std::vector<std::byte>& data) { m_buffer->Write(data); }
+			inline bool Write(const std::vector<std::byte>& data) { return m_buffer->Write(data); }
 			
 			/**
 			 * @brief Write a string to the buffer.
@@ -86,7 +103,7 @@ namespace StormByte::Buffer {
 			 * @details Converts string to bytes and appends. Ignored if closed.
 			 * @see SharedFIFO::Write(), Close()
 			 */
-			inline void Write(const std::string& data) { m_buffer->Write(data); }
+			inline bool Write(const std::string& data) { return m_buffer->Write(data); }
 
 			/**
 			 * @brief Create a Consumer for reading from this Producer's buffer.

@@ -189,8 +189,8 @@ int test_fifo_clear_with_data() {
 int test_fifo_closed_noop_on_empty() {
     FIFO fifo;
     fifo.Close();
-    ASSERT_TRUE("closed flag set", fifo.IsClosed());
-    fifo.Write(std::string("DATA"));
+    ASSERT_FALSE("not writable", fifo.IsWritable());
+    ASSERT_FALSE("failed write operation", fifo.Write(std::string("DATA")));
     ASSERT_TRUE("no write after close (empty)", fifo.Empty());
     ASSERT_EQUAL("size remains zero", fifo.Size(), static_cast<std::size_t>(0));
     RETURN_TEST("test_fifo_closed_noop_on_empty", 0);
@@ -201,8 +201,8 @@ int test_fifo_closed_noop_on_nonempty() {
     fifo.Write(std::string("ABC"));
     ASSERT_EQUAL("pre-close size", fifo.Size(), static_cast<std::size_t>(3));
     fifo.Close();
-    ASSERT_TRUE("closed flag set", fifo.IsClosed());
-    fifo.Write(std::string("DEF"));
+    ASSERT_FALSE("not writable", fifo.IsWritable());
+    ASSERT_FALSE("failed write operation", fifo.Write(std::string("DEF")));
     ASSERT_EQUAL("size unchanged after close", fifo.Size(), static_cast<std::size_t>(3));
     auto out = fifo.Extract();
     ASSERT_EQUAL("content unchanged after close write", StormByte::String::FromByteVector(*out), std::string("ABC"));
@@ -556,7 +556,7 @@ int test_fifo_available_bytes_after_ops() {
 int test_fifo_read_closed_no_data() {
     FIFO fifo;
     fifo.Close();
-    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
     ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
     
     auto result = fifo.Read(10);
@@ -568,7 +568,7 @@ int test_fifo_read_closed_no_data() {
 int test_fifo_extract_closed_no_data() {
     FIFO fifo;
     fifo.Close();
-    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
     ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
     
     auto result = fifo.Extract(10);
@@ -581,7 +581,7 @@ int test_fifo_read_closed_insufficient_data() {
     FIFO fifo;
     fifo.Write("ABC");
     fifo.Close();
-    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
     ASSERT_EQUAL("fifo has 3 bytes", fifo.Size(), static_cast<std::size_t>(3));
     
     auto result = fifo.Read(10);
@@ -594,13 +594,44 @@ int test_fifo_extract_closed_insufficient_data() {
     FIFO fifo;
     fifo.Write("ABC");
     fifo.Close();
-    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
     ASSERT_EQUAL("fifo has 3 bytes", fifo.Size(), static_cast<std::size_t>(3));
     
     auto result = fifo.Extract(10);
     ASSERT_TRUE("Extract(10) returns Unexpected when only 3 available", !result.has_value());
     
     RETURN_TEST("test_fifo_extract_closed_insufficient_data", 0);
+}
+
+int test_fifo_write_after_error() {
+	FIFO fifo;
+	fifo.SetError();
+	ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
+	ASSERT_FALSE("write after error should fail operation", fifo.Write("DATA"));
+	
+	RETURN_TEST("test_fifo_write_after_error", 0);
+}
+
+int test_fifo_read_after_error() {
+	FIFO fifo;
+	fifo.Write("DATA");
+	fifo.SetError();
+	
+	auto result = fifo.Read(2);
+	ASSERT_FALSE("Read after error returns Unexpected", result.has_value());
+	
+	RETURN_TEST("test_fifo_read_after_error", 0);
+}
+
+int test_fifo_extract_after_error() {
+	FIFO fifo;
+	fifo.Write("DATA");
+	fifo.SetError();
+	
+	auto result = fifo.Extract(2);
+	ASSERT_FALSE("Extract after error returns Unexpected", result.has_value());
+	
+	RETURN_TEST("test_fifo_extract_after_error", 0);
 }
 
 int main() {
@@ -639,6 +670,9 @@ int main() {
     result += test_fifo_extract_closed_no_data();
     result += test_fifo_read_closed_insufficient_data();
     result += test_fifo_extract_closed_insufficient_data();
+	result += test_fifo_write_after_error();
+	result += test_fifo_read_after_error();
+	result += test_fifo_extract_after_error();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

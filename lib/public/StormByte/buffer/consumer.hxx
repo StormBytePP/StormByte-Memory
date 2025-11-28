@@ -30,11 +30,11 @@ namespace StormByte::Buffer {
      *
      * @par Blocking behavior
      *  - @ref Read() blocks until the requested number of bytes are available
-     *    or the buffer is closed. If count is 0, returns all available data
-     *    from the current read position without blocking.
+     *    or the buffer becomes unreadable (closed or error). If count is 0, returns
+     *    all available data from the current read position without blocking.
      *  - @ref Extract() blocks until the requested number of bytes are available
-     *    or the buffer is closed. If count is 0, returns all available data
-     *    immediately and clears the buffer.
+     *    or the buffer becomes unreadable (closed or error). If count is 0, returns
+     *    all available data immediately and clears the buffer.
      *
      * @par Producer-Consumer relationship
      *  Consumer instances cannot be created directly. They must be obtained from
@@ -113,9 +113,10 @@ namespace StormByte::Buffer {
 			 * @brief Non-destructive read from the buffer (blocks until data available).
 			 * @param count Number of bytes to read; 0 reads all available without blocking.
 			 * @return Expected containing a vector with the requested bytes, or an error.
-			 * @details **Blocks** until count bytes available or buffer closed (if count > 0).
-			 *          Data remains in buffer and can be re-read using Seek().
-			 * @see SharedFIFO::Read(), Extract(), Seek()
+			 * @details **Blocks** until count bytes available or buffer becomes unreadable
+			 *          (closed or error) (if count > 0). Data remains in buffer and can be
+			 *          re-read using Seek().
+			 * @see SharedFIFO::Read(), Extract(), Seek(), IsReadable()
 			 */
 
 			inline ExpectedData<InsufficientData> Read(std::size_t count = 0) { return m_buffer->Read(count); }
@@ -124,20 +125,31 @@ namespace StormByte::Buffer {
 			* @brief Destructive read that removes data from the buffer (blocks until data available).
 			* @param count Number of bytes to extract; 0 extracts all available without blocking.
 			* @return Expected containing a vector with the extracted bytes, or an error.
-			* @details **Blocks** until count bytes available or buffer closed (if count > 0).
-			*          Removes data from buffer. Multiple consumers share data fairly.
-			* @see SharedFIFO::Extract(), Read()
+			* @details **Blocks** until count bytes available or buffer becomes unreadable
+			*          (closed or error) (if count > 0). Removes data from buffer.
+			*          Multiple consumers share data fairly.
+			* @see SharedFIFO::Extract(), Read(), IsReadable()
 			*/
 			inline ExpectedData<InsufficientData> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }
 			
 			/**
-			 * @brief Check if the buffer is closed for further writes.
-			 * @return true if closed, false otherwise.
-			 * @details When closed, blocked Read()/Extract() calls wake up and return
-			 *          available data. Consumers can still read remaining data.
-			 * @see Producer::Close(), SharedFIFO::Close()
+			 * @brief Check if the buffer is readable (not in error state).
+			 * @return true if readable, false if buffer is in error state.
+			 * @details When not readable, blocked Read()/Extract() calls wake up and return
+			 *          an error. A buffer becomes unreadable via SetError().
+			 * @see SetError(), IsWritable(), EoF()
 			 */
-			inline bool IsClosed() const noexcept { return m_buffer->IsClosed(); }
+			inline bool IsReadable() const noexcept { return m_buffer->IsReadable(); }
+
+			/**
+			 * @brief Check if the buffer is writable (not closed and not in error state).
+			 * @return true if writable, false if closed or in error state.
+			 * @details While a consumer cannot write, it might be useful to know
+			 *          if it can expect further data to arrive or not. A buffer becomes
+			 *          unwritable via Close() or SetError().
+			 * @see Close(), SetError(), IsReadable()
+			 */
+			inline bool IsWritable() const noexcept { return m_buffer->IsWritable(); }
 
 			/**
 			 * @brief Move the read position for non-destructive reads.
@@ -148,6 +160,15 @@ namespace StormByte::Buffer {
 			 * @see SharedFIFO::Seek(), Read()
 			 */
 			inline void Seek(const std::size_t& position, const Position& mode) { m_buffer->Seek(position, mode); }
+
+			/**
+			 * @brief Check if the reader has reached end-of-file.
+			 * @return true if buffer is unreadable and no bytes available, false otherwise.
+			 * @details Returns true when IsReadable() is false AND AvailableBytes() == 0,
+			 *          indicating no more data can be read from this buffer.
+			 * @see IsReadable(), AvailableBytes()
+			 */
+			inline bool EoF() const noexcept { return m_buffer->EoF(); }
 
         private:
             /** @brief Shared pointer to the underlying thread-safe FIFO buffer. */

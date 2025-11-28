@@ -5,16 +5,17 @@
 
 using namespace StormByte::Buffer;
 
-FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0), m_closed(false) {}
+FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0), m_closed(false), m_error(false) {}
 
-FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0), m_closed(false) {
+FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0), m_closed(false), m_error(false) {
 	Copy(other);
 }
 
 FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)),
-m_position_offset(other.m_position_offset), m_closed(other.m_closed) {
+m_position_offset(other.m_position_offset), m_closed(other.m_closed), m_error(other.m_error) {
 	other.m_position_offset = 0;
 	other.m_closed = true;
+	other.m_error = true;
 }
 
 FIFO::~FIFO() {
@@ -70,8 +71,16 @@ void FIFO::Close() noexcept {
 	m_closed = true;
 }
 
+void FIFO::SetError() noexcept {
+	m_error = true;
+}
+
+bool FIFO::EoF() const noexcept {
+	return m_error || ( m_closed && AvailableBytes() == 0 );
+}
+
 bool FIFO::Write(const std::vector<std::byte>& data) {
-	if (IsClosed()) return false;
+	if (!IsWritable()) return false;
 	if (!data.empty())
 		m_buffer.insert(m_buffer.end(), data.begin(), data.end());
 	return true;
@@ -83,6 +92,10 @@ bool FIFO::Write(const std::string& data) {
 
 ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
 	const std::size_t available = AvailableBytes();
+
+	if (!IsReadable()) {
+		return StormByte::Unexpected(InsufficientData("FIFO is not readable"));
+	}
 	
 	// count=0 means "read all available"
 	const std::size_t read_size = (count == 0) ? available : std::min(count, available);
@@ -116,6 +129,10 @@ ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
 ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
 	// Extract always reads from the beginning (head), not from current read position
 	const std::size_t buffer_size = m_buffer.size();
+
+	if (!IsReadable()) {
+		return StormByte::Unexpected(InsufficientData("FIFO is not readable"));
+	}
 	
 	// count=0 means "extract all available"
 	const std::size_t extract_size = (count == 0) ? buffer_size : std::min(count, buffer_size);
@@ -145,10 +162,6 @@ ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
 	m_position_offset = (m_position_offset > extract_size) ? (m_position_offset - extract_size) : 0;
 	
 	return result;
-}
-
-bool FIFO::IsClosed() const noexcept {
-	return m_closed;
 }
 
 void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {

@@ -11,6 +11,14 @@ void SharedFIFO::Close() noexcept {
 	m_cv.notify_all();
 }
 
+void SharedFIFO::SetError() noexcept {
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		m_error = true;
+	}
+	m_cv.notify_all();
+}
+
 void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
 	if (n == 0) return;
 	m_cv.wait(lock, [&] {

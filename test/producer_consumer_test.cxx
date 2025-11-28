@@ -105,13 +105,13 @@ int test_producer_consumer_close_mechanism() {
     auto consumer = producer.Consumer();
 
     producer.Write("Data");
-    ASSERT_FALSE("not closed initially", consumer.IsClosed());
+    ASSERT_TRUE("consumer readable initially", consumer.IsReadable());
+	ASSERT_TRUE("producer writable initially", producer.IsWritable());
 
     producer.Close();
-    ASSERT_TRUE("closed after Close()", consumer.IsClosed());
+    ASSERT_FALSE("producer not writable after Close()", producer.IsWritable());
 
-    // Writing after close should be ignored
-    producer.Write("MoreData");
+    ASSERT_FALSE("write after close should fail", producer.Write("MoreData"));
     ASSERT_EQUAL("size unchanged after close write", consumer.Size(), static_cast<std::size_t>(4));
 
     RETURN_TEST("test_producer_consumer_close_mechanism", 0);
@@ -195,7 +195,7 @@ int test_single_producer_single_consumer_threaded() {
     std::thread cons_thread([&]() {
         while (true) {
             auto data = consumer.Extract(10);
-            if (data->empty() && consumer.IsClosed()) break;
+            if (data->empty() && consumer.EoF()) break;
             collected.append(StormByte::String::FromByteVector(*data));
         }
     });
@@ -205,7 +205,7 @@ int test_single_producer_single_consumer_threaded() {
 
     ASSERT_TRUE("producer completed", producer_done.load());
     ASSERT_TRUE("consumer received data", !collected.empty());
-    ASSERT_TRUE("consumer closed", consumer.IsClosed());
+    ASSERT_TRUE("consumer closed", consumer.EoF());
 
     RETURN_TEST("test_single_producer_single_consumer_threaded", 0);
 }
@@ -291,7 +291,7 @@ int test_single_producer_multiple_consumers() {
     auto consumer_func = [&](Consumer& cons, std::atomic<size_t>& counter) {
         while (true) {
             auto data = cons.Extract(5);
-            if (data->empty() && cons.IsClosed()) break;
+            if (data->empty() && cons.EoF()) break;
             counter.fetch_add(data->size());
         }
     };
@@ -348,7 +348,7 @@ int test_multiple_producers_multiple_consumers() {
             
             while (true) {
                 auto data = cons_copy.Extract(10);
-                if (data->empty() && cons_copy.IsClosed()) break;
+                if (data->empty() && cons_copy.EoF()) break;
                 local_consumed += data->size();
             }
             
@@ -454,7 +454,7 @@ int test_producer_consumer_stress_rapid_operations() {
     std::thread reader([&]() {
         while (true) {
             auto data = consumer.Extract(10);
-            if (data->empty() && consumer.IsClosed()) break;
+            if (data->empty() && consumer.EoF()) break;
             read_count.fetch_add(data->size());
         }
     });
@@ -496,7 +496,7 @@ int test_producer_consumer_pipeline_pattern() {
     std::thread stage2([&]() {
         while (true) {
             auto data = stage1_consumer.Extract(10);
-            if (data->empty() && stage1_consumer.IsClosed()) break;
+            if (data->empty() && stage1_consumer.EoF()) break;
             
             std::string str = StormByte::String::FromByteVector(*data);
             std::transform(str.begin(), str.end(), str.begin(), ::toupper);
@@ -510,7 +510,7 @@ int test_producer_consumer_pipeline_pattern() {
     std::thread stage3([&]() {
         while (true) {
             auto data = stage2_consumer.Extract(10);
-            if (data->empty() && stage2_consumer.IsClosed()) break;
+            if (data->empty() && stage2_consumer.EoF()) break;
             final_result.append(StormByte::String::FromByteVector(*data));
         }
         done.store(true);
@@ -727,7 +727,7 @@ int test_rapid_write_close_with_slow_consumer() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             auto data = consumer.Extract(5);
-            if (data->empty() && consumer.IsClosed()) break;
+            if (data->empty() && consumer.EoF()) break;
             total_consumed.fetch_add(data->size());
         }
     });
@@ -800,7 +800,7 @@ int test_very_large_data_transfer() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(4096);
-            if (data->empty() && consumer.IsClosed()) break;
+            if (data->empty() && consumer.EoF()) break;
             received_size += data->size();
         }
         transfer_complete.store(true);
@@ -837,7 +837,7 @@ int test_alternating_small_large_writes() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(100);
-            if (data->empty() && consumer.IsClosed()) break;
+            if (data->empty() && consumer.EoF()) break;
             total_received.fetch_add(data->size());
         }
         done.store(true);
@@ -921,7 +921,7 @@ int test_burst_writes_with_reserve() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(100);
-            if (data->empty() && consumer.IsClosed()) break;
+            if (data->empty() && consumer.EoF()) break;
             total.fetch_add(data->size());
         }
     });

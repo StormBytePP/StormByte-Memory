@@ -72,16 +72,32 @@ namespace StormByte::Buffer {
              * @name Thread-safe overrides
              * @{
              */
+
+			/**
+			 * @brief Thread-safe close for further writes.
+			 * @details Marks buffer as closed, notifies all waiting threads. Subsequent writes
+			 *          are ignored. The buffer remains readable until all data is consumed.
+			 * @see FIFO::Close(), IsWritable()
+			 */
 			void Close() noexcept override;
+
+			/**
+			 * @brief Thread-safe error state setting.
+			 * @details Marks buffer as erroneous (unreadable and unwritable), notifies all
+			 *          waiting threads. Subsequent writes are ignored and reads will fail.
+			 * @see FIFO::SetError(), IsReadable(), IsWritable()
+			 */
+			void SetError() noexcept override;
 
 			/**
 			 * @brief Thread-safe blocking read from the buffer.
 			 * @param count Number of bytes to read; 0 reads all available immediately.
 			 * @return A vector containing the requested bytes, or error.
 			 * @details Blocks until @p count bytes are available from the current read position,
-			 *          or until the FIFO is closed. If count == 0, returns immediately with
-			 *          all available data. If closed before count bytes available, returns error.
-			 * @see FIFO::Read(), Wait()
+			 *          or until the buffer becomes unreadable (closed or error). If count == 0,
+			 *          returns immediately with all available data. If buffer becomes unreadable
+			 *          before count bytes available, returns error.
+			 * @see FIFO::Read(), Wait(), IsReadable()
 			 */
 			ExpectedData<InsufficientData> Read(std::size_t count = 0) const override;
 
@@ -89,10 +105,11 @@ namespace StormByte::Buffer {
 			 * @brief Thread-safe blocking extract from the buffer.
 			 * @param count Number of bytes to extract; 0 extracts all available immediately.
 			 * @return A vector containing the extracted bytes, or error.
-			 * @details Blocks until @p count bytes are available, or until the FIFO is closed.
-			 *          If count == 0, returns immediately with all available data and removes it.
-			 *          If closed before count bytes available, returns error.
-			 * @see FIFO::Extract(), Wait()
+			 * @details Blocks until @p count bytes are available, or until the buffer becomes
+			 *          unreadable (closed or error). If count == 0, returns immediately with
+			 *          all available data and removes it. If buffer becomes unreadable before
+			 *          count bytes available, returns error.
+			 * @see FIFO::Extract(), Wait(), IsReadable()
 			 */
 			ExpectedData<InsufficientData> Extract(std::size_t count = 0) override;
 
@@ -136,12 +153,14 @@ namespace StormByte::Buffer {
 
         private:
             /**
-             * @brief Wait until at least @p n bytes are available from the current read position (or closed).
+             * @brief Wait until at least @p n bytes are available from the current read position
+             *        (or buffer becomes unreadable).
              * @param n Number of bytes to wait for; if 0, returns immediately.
              * @param lock The caller-held unique_lock for the internal mutex; the
              *        method will wait using this lock and return with it still held.
-             * @note Wakes and returns when @ref Close() is called, even if the
+             * @note Wakes and returns when Close() or SetError() is called, even if the
              *       requested @p n bytes are not available.
+             * @see Close(), SetError(), IsReadable()
              */
             void Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const;
 

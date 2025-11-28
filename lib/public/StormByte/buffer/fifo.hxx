@@ -115,10 +115,20 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Close the FIFO for further writes.
 			 * @details Marks the buffer as closed. Subsequent Write() calls will be ignored.
-			 *          For SharedFIFO, also notifies waiting readers.
-			 * @see IsClosed(), SharedFIFO::Close()
+			 *          For SharedFIFO, also notifies waiting readers. The buffer remains
+			 *          readable until all data is consumed.
+			 * @see IsWritable(), SetError(), SharedFIFO::Close()
 			 */
 			virtual void Close() noexcept;
+
+			/**
+			 * @brief Mark the buffer as erroneous, making it unreadable and unwritable.
+			 * @details Sets the error state on the buffer. Subsequent Write() calls will be
+			 *          ignored, and Read()/Extract() operations will fail. For SharedFIFO,
+			 *          also notifies waiting readers/writers.
+			 * @see IsReadable(), IsWritable(), EoF()
+			 */
+			virtual void SetError() noexcept;
 
 			/**
 			 * @brief Write bytes from a vector to the buffer.
@@ -144,10 +154,11 @@ namespace StormByte::Buffer {
 			 * @return A vector containing the requested bytes, or error if insufficient data.
 			 * @details Non-destructive operation - data remains in the buffer and can be
 			 *          read again using Seek(). The read position advances by the number
-			 *          of bytes read. Returns error if requesting specific count with no data available.
+			 *          of bytes read. Returns error if buffer is unreadable (error state)
+			 *          or if requesting specific count with no data available.
 			 *          Returns partial data if available < count (open FIFO behavior).
 			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Read().
-			 * @see Extract(), Seek(), SharedFIFO::Read()
+			 * @see Extract(), Seek(), SharedFIFO::Read(), IsReadable()
 			 */
 			virtual ExpectedData<InsufficientData> Read(std::size_t count = 0) const;
 
@@ -158,18 +169,41 @@ namespace StormByte::Buffer {
 			 * @details Removes data from the buffer, advancing the head and decreasing size.
 			 *          The read position is adjusted. Uses zero-copy move semantics when
 			 *          extracting all contiguous data (optimization).
-			 *          Returns error if requesting specific count with no data available.
+			 *          Returns error if buffer is unreadable (error state) or if requesting
+			 *          specific count with no data available.
 			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Extract().
-			 * @see Read(), SharedFIFO::Extract()
+			 * @see Read(), SharedFIFO::Extract(), IsReadable()
 			 */
 			virtual ExpectedData<InsufficientData> Extract(std::size_t count = 0);
 
 			/**
-			 * @brief Check if the buffer is closed for further writes.
-			 * @return true if closed, false otherwise.
-			 * @see Close()
+			 * @brief Check if the buffer is readable (not in error state).
+			 * @return true if readable, false if buffer is in error state.
+			 * @details A buffer becomes unreadable when SetError() is called. Use in
+			 *          combination with AvailableBytes() to check if there is data
+			 *          pending to read.
+			 * @see SetError(), IsWritable(), AvailableBytes(), EoF()
 			 */
-			virtual bool IsClosed() const noexcept;
+			inline bool IsReadable() const noexcept { return !m_error; }
+
+			/**
+			 * @brief Check if the buffer is writable (not closed and not in error state).
+			 * @return true if writable, false if closed or in error state.
+			 * @details A buffer becomes unwritable when Close() or SetError() is called.
+			 * @see Close(), SetError(), IsReadable()
+			 */
+			inline bool IsWritable() const noexcept { return !m_closed && !m_error; }
+
+			/**
+			 * @brief Check if the reader has reached end-of-file.
+			 * @return true if buffer is unreadable and no bytes available, false otherwise.
+			 * @details Returns true when the buffer is unreadable (error state) AND
+			 *          AvailableBytes() == 0, indicating no more data can be read.
+			 *          This occurs when the buffer is in error state and all data has
+			 *          been consumed.
+			 * @see IsReadable(), AvailableBytes()
+			 */
+			bool EoF() const noexcept;
 
 			/**
 			 * @brief Move the read position for non-destructive reads.
@@ -200,6 +234,8 @@ namespace StormByte::Buffer {
 			 * @brief Whether the FIFO is closed for further writes.
 			 */
 			bool m_closed;
+
+			bool m_error;
 
 		private:
 			void Copy(const FIFO& other) noexcept;
