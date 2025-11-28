@@ -220,7 +220,7 @@ namespace StormByte::Buffer {
              *
              * @see AddPipe(), Consumer, Producer, ExecutionMode
              */
-            Consumer												Process(Consumer buffer, const ExecutionMode& mode) noexcept;
+            Consumer												Process(Consumer buffer, const ExecutionMode& mode, std::shared_ptr<Logger> logger) noexcept;
 
         private:
             std::vector<PipeFunction> m_pipes;						///< Vector of pipe functions

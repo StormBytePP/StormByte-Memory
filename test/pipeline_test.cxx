@@ -26,6 +26,8 @@ using StormByte::Buffer::Consumer;
     #define CONSUME(consumer, count) (consumer).Extract(count)
 #endif
 
+auto logger = std::make_shared<StormByte::Logger>(std::cout, StormByte::Logger::Level::LowLevel);
+
 // Helper to wait for pipeline completion without arbitrary sleeps
 void wait_for_pipeline_completion(Consumer& consumer) {
     while (consumer.IsWritable()) {
@@ -41,7 +43,7 @@ int test_pipeline_empty() {
     input.Close();
     
     // Empty pipeline should just pass through
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -56,7 +58,7 @@ int test_pipeline_single_stage() {
     Pipeline pipeline;
     
     // Single stage: uppercase transformation
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -72,7 +74,7 @@ int test_pipeline_single_stage() {
     input.Write("hello world");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -87,7 +89,7 @@ int test_pipeline_two_stages() {
     Pipeline pipeline;
     
     // Stage 1: uppercase
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -100,7 +102,7 @@ int test_pipeline_two_stages() {
     });
     
     // Stage 2: replace spaces with underscores
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -116,7 +118,7 @@ int test_pipeline_two_stages() {
     input.Write("hello world test");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -131,7 +133,7 @@ int test_pipeline_three_stages() {
     Pipeline pipeline;
     
     // Stage 1: uppercase
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -144,7 +146,7 @@ int test_pipeline_three_stages() {
     });
     
     // Stage 2: replace spaces
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -157,7 +159,7 @@ int test_pipeline_three_stages() {
     });
     
     // Stage 3: add prefix and suffix
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         out.Write("[");
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
@@ -173,7 +175,7 @@ int test_pipeline_three_stages() {
     input.Write("test data");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -188,7 +190,7 @@ int test_pipeline_incremental_processing() {
     Pipeline pipeline;
     
     // Stage that processes data incrementally
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 1); // Read one byte at a time
             if (data && !data->empty()) {
@@ -204,7 +206,7 @@ int test_pipeline_incremental_processing() {
     input.Write("abc");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -219,7 +221,7 @@ int test_pipeline_filter_stage() {
     Pipeline pipeline;
     
     // Stage that filters out non-alphabetic characters
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -242,7 +244,7 @@ int test_pipeline_filter_stage() {
     input.Write("Hello123World456!");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -257,7 +259,7 @@ int test_pipeline_multiple_writes() {
     Pipeline pipeline;
     
     // Stage that duplicates each piece of data
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -272,7 +274,7 @@ int test_pipeline_multiple_writes() {
     input.Write("AB");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -286,7 +288,7 @@ int test_pipeline_multiple_writes() {
 int test_pipeline_empty_input() {
     Pipeline pipeline;
     
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -299,7 +301,7 @@ int test_pipeline_empty_input() {
     Producer input;
     input.Close(); // Close without writing
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -314,7 +316,7 @@ int test_pipeline_large_data() {
     Pipeline pipeline;
     
     // Stage that counts characters
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         std::size_t count = 0;
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
@@ -332,7 +334,7 @@ int test_pipeline_large_data() {
     input.Write(large_data);
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -347,7 +349,7 @@ int test_pipeline_reuse() {
     Pipeline pipeline;
     
     // Stage that adds prefix
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         out.Write(">");
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
@@ -364,7 +366,7 @@ int test_pipeline_reuse() {
         input1.Write("TEST1");
         input1.Close();
         
-        Consumer result1 = pipeline.Process(input1.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+        Consumer result1 = pipeline.Process(input1.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
         wait_for_pipeline_completion(result1);
         
         auto data1 = result1.Read(0);
@@ -378,7 +380,7 @@ int test_pipeline_reuse() {
         input2.Write("TEST2");
         input2.Close();
         
-        Consumer result2 = pipeline.Process(input2.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+        Consumer result2 = pipeline.Process(input2.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
         wait_for_pipeline_completion(result2);
         
         auto data2 = result2.Read(0);
@@ -392,7 +394,7 @@ int test_pipeline_reuse() {
 int test_pipeline_copy_constructor() {
     Pipeline pipeline1;
     
-    pipeline1.AddPipe([](Consumer in, Producer out) {
+    pipeline1.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -411,7 +413,7 @@ int test_pipeline_copy_constructor() {
     input.Write("test");
     input.Close();
     
-    Consumer result = pipeline2.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline2.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -425,7 +427,7 @@ int test_pipeline_copy_constructor() {
 int test_pipeline_move_constructor() {
     Pipeline pipeline1;
     
-    pipeline1.AddPipe([](Consumer in, Producer out) {
+    pipeline1.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -444,7 +446,7 @@ int test_pipeline_move_constructor() {
     input.Write("TEST");
     input.Close();
     
-    Consumer result = pipeline2.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline2.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -458,7 +460,7 @@ int test_pipeline_move_constructor() {
 int test_pipeline_addpipe_move() {
     Pipeline pipeline;
     
-    auto func = [](Consumer in, Producer out) {
+    auto func = [](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -475,7 +477,7 @@ int test_pipeline_addpipe_move() {
     input.Write("MOVE");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -490,7 +492,7 @@ int test_pipeline_word_count() {
     Pipeline pipeline;
     
     // Count words (space-separated)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         std::size_t word_count = 0;
         std::string buffer;
         
@@ -519,7 +521,7 @@ int test_pipeline_word_count() {
     input.Write("Hello world this is a test");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -534,7 +536,7 @@ int test_pipeline_reverse_string() {
     Pipeline pipeline;
     
     // Reverse the string
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         std::string buffer;
         
         while (!in.EoF()) {
@@ -553,7 +555,7 @@ int test_pipeline_reverse_string() {
     input.Write("ABCDEF");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -568,7 +570,7 @@ int test_pipeline_streaming_data() {
     Pipeline pipeline;
     
     // Pass through with small delay to simulate processing
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -591,7 +593,7 @@ int test_pipeline_streaming_data() {
         input.Close();
     });
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     writer.join();
     
@@ -608,7 +610,7 @@ int test_pipeline_byte_arithmetic() {
     Pipeline pipeline;
     
     // Stage 1: Add 1 to each byte
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -624,7 +626,7 @@ int test_pipeline_byte_arithmetic() {
     });
     
     // Stage 2: Multiply by 2
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -640,7 +642,7 @@ int test_pipeline_byte_arithmetic() {
     });
     
     // Stage 3: Divide by 2
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -656,7 +658,7 @@ int test_pipeline_byte_arithmetic() {
     });
     
     // Stage 4: Subtract 1
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -680,7 +682,7 @@ int test_pipeline_byte_arithmetic() {
     input.Write(input_data);
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     wait_for_pipeline_completion(result);
     
@@ -702,7 +704,7 @@ int test_pipeline_large_concurrent_stress() {
     Pipeline pipeline;
     
     // Stage 1: XOR with 0x55
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -718,7 +720,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 2: Add 17 to each byte
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -734,7 +736,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 3: NOT (bitwise complement)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -750,7 +752,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 4: XOR with 0xAA
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -766,7 +768,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 5: Multiply by 3 (mod 256)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -782,7 +784,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 6: Rotate left by 3 bits
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -799,7 +801,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 7: Subtract 42
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -815,7 +817,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 8: XOR with 0x33
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -831,7 +833,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 9: UNDO - XOR with 0x33 (XOR is self-inverse)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -847,7 +849,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 10: UNDO - Add 42 (reverse of subtract 42)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -863,7 +865,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 11: UNDO - Rotate right by 3 bits (reverse of rotate left)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -880,7 +882,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 12: UNDO - Multiply by 171 (modular inverse of 3 mod 256)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -896,7 +898,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 13: UNDO - XOR with 0xAA (XOR is self-inverse)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -912,7 +914,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 14: UNDO - NOT (bitwise complement is self-inverse)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -928,7 +930,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 15: UNDO - Subtract 17 (reverse of add 17)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -944,7 +946,7 @@ int test_pipeline_large_concurrent_stress() {
     });
     
     // Stage 16: UNDO - XOR with 0x55 (XOR is self-inverse)
-    pipeline.AddPipe([](Consumer in, Producer out) {
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -987,7 +989,7 @@ int test_pipeline_large_concurrent_stress() {
         input.Close();
     });
     
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
     
     writer.join();
     
@@ -1037,7 +1039,7 @@ int test_pipeline_sync_execution() {
     std::string order;
 
     // Stage 1: uppercase and record order
-    pipeline.AddPipe([&order](Consumer in, Producer out) {
+    pipeline.AddPipe([&order](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         order.push_back('1');
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
@@ -1051,7 +1053,7 @@ int test_pipeline_sync_execution() {
     });
 
     // Stage 2: replace spaces and record order
-    pipeline.AddPipe([&order](Consumer in, Producer out) {
+    pipeline.AddPipe([&order](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         order.push_back('2');
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
@@ -1068,7 +1070,7 @@ int test_pipeline_sync_execution() {
     input.Write("sync mode test");
     input.Close();
 
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Sync);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Sync, logger);
 
     // In Sync mode, processing should have completed already
     ASSERT_FALSE("sync result writable", result.IsWritable());
@@ -1088,7 +1090,7 @@ int test_pipeline_interrupted_by_seterror() {
 
     // Construct a long pipeline with stages that check writability and bail fast on error
     for (int i = 0; i < 8; ++i) {
-        pipeline.AddPipe([](Consumer in, Producer out) {
+        pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
             while (!in.EoF()) {
                 auto data = CONSUME(in, 0);
                 if (data && !data->empty()) {
@@ -1114,7 +1116,7 @@ int test_pipeline_interrupted_by_seterror() {
     input.Write(payload);
     input.Close();
 
-    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logger);
 
     // Immediately signal error to interrupt the pipeline
     pipeline.SetError();

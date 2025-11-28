@@ -19,7 +19,7 @@ void Pipeline::SetError() noexcept {
 	}
 }
 
-Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode) noexcept {
+Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, std::shared_ptr<Logger> logger) noexcept {
 	// Use pre-created producers corresponding to each pipe
 	if (m_pipes.empty()) {
 		return buffer; // no stages, passthrough
@@ -37,10 +37,10 @@ Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode) noexcept 
 		Consumer stage_in = buffer;
 		Producer& stage_out = m_producers[0];
 		if (mode == ExecutionMode::Sync) {
-			m_pipes[0](stage_in, stage_out);
+			m_pipes[0](stage_in, stage_out, logger);
 		} else {
-			std::thread([pipe = m_pipes[0], in = stage_in, out = stage_out]() mutable {
-				pipe(in, out);
+			std::thread([pipe = m_pipes[0], in = stage_in, out = stage_out, logger]() mutable {
+				pipe(in, out, logger);
 			}).detach();
 		}
 	}
@@ -50,10 +50,10 @@ Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode) noexcept 
 		Consumer stage_in = m_producers[i - 1].Consumer();
 		Producer& stage_out = m_producers[i];
 		if (mode == ExecutionMode::Sync) {
-			m_pipes[i](stage_in, stage_out);
+			m_pipes[i](stage_in, stage_out, logger);
 		} else {
-			std::thread([pipe = m_pipes[i], in = stage_in, out = stage_out]() mutable {
-				pipe(in, out);
+			std::thread([pipe = m_pipes[i], in = stage_in, out = stage_out, logger]() mutable {
+				pipe(in, out, logger);
 			}).detach();
 		}
 	}
