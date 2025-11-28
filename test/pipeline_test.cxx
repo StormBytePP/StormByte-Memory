@@ -23,6 +23,13 @@ using StormByte::Buffer::Consumer;
     #define CONSUME(consumer, count) (consumer).Extract(count)
 #endif
 
+// Helper to wait for pipeline completion without arbitrary sleeps
+void wait_for_pipeline_completion(Consumer& consumer) {
+    while (!consumer.IsClosed()) {
+        std::this_thread::yield();
+    }
+}
+
 int test_pipeline_empty() {
     Pipeline pipeline;
     
@@ -33,8 +40,7 @@ int test_pipeline_empty() {
     // Empty pipeline should just pass through
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Give threads time to execute
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("empty pipeline has data", data.has_value());
@@ -65,8 +71,7 @@ int test_pipeline_single_stage() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("single stage has data", data.has_value());
@@ -110,8 +115,7 @@ int test_pipeline_two_stages() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("two stages has data", data.has_value());
@@ -168,8 +172,7 @@ int test_pipeline_three_stages() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("three stages has data", data.has_value());
@@ -200,8 +203,7 @@ int test_pipeline_incremental_processing() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("incremental has data", data.has_value());
@@ -239,8 +241,7 @@ int test_pipeline_filter_stage() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("filter has data", data.has_value());
@@ -270,8 +271,7 @@ int test_pipeline_multiple_writes() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("multiple writes has data", data.has_value());
@@ -298,8 +298,7 @@ int test_pipeline_empty_input() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("empty input has result", data.has_value());
@@ -332,8 +331,7 @@ int test_pipeline_large_data() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("large data has result", data.has_value());
@@ -364,7 +362,7 @@ int test_pipeline_reuse() {
         input1.Close();
         
         Consumer result1 = pipeline.Process(input1.Consumer());
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        wait_for_pipeline_completion(result1);
         
         auto data1 = result1.Read(0);
         ASSERT_TRUE("reuse first has data", data1.has_value());
@@ -378,7 +376,7 @@ int test_pipeline_reuse() {
         input2.Close();
         
         Consumer result2 = pipeline.Process(input2.Consumer());
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        wait_for_pipeline_completion(result2);
         
         auto data2 = result2.Read(0);
         ASSERT_TRUE("reuse second has data", data2.has_value());
@@ -412,8 +410,7 @@ int test_pipeline_copy_constructor() {
     
     Consumer result = pipeline2.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("copy constructor has data", data.has_value());
@@ -446,8 +443,7 @@ int test_pipeline_move_constructor() {
     
     Consumer result = pipeline2.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("move constructor has data", data.has_value());
@@ -478,8 +474,7 @@ int test_pipeline_addpipe_move() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("addpipe move has data", data.has_value());
@@ -523,8 +518,7 @@ int test_pipeline_word_count() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("word count has data", data.has_value());
@@ -558,8 +552,7 @@ int test_pipeline_reverse_string() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("reverse has data", data.has_value());
@@ -599,8 +592,7 @@ int test_pipeline_streaming_data() {
     
     writer.join();
     
-    // Wait for all processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("streaming has data", data.has_value());
@@ -687,8 +679,7 @@ int test_pipeline_byte_arithmetic() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("byte arithmetic has data", data.has_value());
