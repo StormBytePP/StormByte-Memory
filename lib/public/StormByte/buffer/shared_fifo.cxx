@@ -19,7 +19,9 @@ void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
 		const std::size_t rp = m_position_offset;
 		return sz >= rp + n; // at least n bytes available from current read position
 	});
-}ExpectedData<InsufficientData> SharedFIFO::Read(std::size_t count) const {
+}
+
+ExpectedData<InsufficientData> SharedFIFO::Read(std::size_t count) const {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	if (count != 0) {
 		Wait(count, lock);
