@@ -20,27 +20,43 @@ void Pipeline::SetError() noexcept {
 }
 
 Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode) noexcept {
-	Consumer last_result = buffer;
-
-	for (const auto& pipe: m_pipes) {
-		Producer current_result;
-
-		if (mode == ExecutionMode::Sync) {
-			pipe(last_result, current_result);
-			// Update the buffer chain to the result's consumer
-			last_result = current_result.Consumer();
-		}
-		else {
-			// Launch a detached thread for each pipe function
-			std::thread([pipe, current_result, last_result]() {
-				pipe(last_result, current_result);
-			}).detach();
-		}
-
-		// Update the buffer chain to the result's consumer
-		last_result = current_result.Consumer();
-		m_producers.push_back(std::move(current_result));
+	// Use pre-created producers corresponding to each pipe
+	if (m_pipes.empty()) {
+		return buffer; // no stages, passthrough
 	}
 
-	return last_result;
+	// Reset producers to ensure a fresh run when reusing the pipeline
+	m_producers.clear();
+	m_producers.resize(m_pipes.size());
+	for (auto& prod : m_producers) {
+		prod = Producer();
+	}
+
+	// Stage 0: consume from input, produce to m_producers[0]
+	{
+		Consumer stage_in = buffer;
+		Producer& stage_out = m_producers[0];
+		if (mode == ExecutionMode::Sync) {
+			m_pipes[0](stage_in, stage_out);
+		} else {
+			std::thread([pipe = m_pipes[0], in = stage_in, out = stage_out]() mutable {
+				pipe(in, out);
+			}).detach();
+		}
+	}
+
+	// Remaining stages: consume from previous producer's consumer, output to own producer
+	for (std::size_t i = 1; i < m_pipes.size(); ++i) {
+		Consumer stage_in = m_producers[i - 1].Consumer();
+		Producer& stage_out = m_producers[i];
+		if (mode == ExecutionMode::Sync) {
+			m_pipes[i](stage_in, stage_out);
+		} else {
+			std::thread([pipe = m_pipes[i], in = stage_in, out = stage_out]() mutable {
+				pipe(in, out);
+			}).detach();
+		}
+	}
+
+	return m_producers.back().Consumer();
 }

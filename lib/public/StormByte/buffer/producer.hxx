@@ -28,12 +28,17 @@ namespace StormByte::Buffer {
         public:
             /**
              * @brief Construct a Producer with a new SharedFIFO buffer.
-             * @param buffer Shared pointer to the underlying SharedFIFO buffer. If not provided,
-             *               a new SharedFIFO is created.
-             * @details Creates a new Producer instance with its own SharedFIFO buffer.
-             *          The buffer can be shared with Consumer instances.
+             * @details Creates a new Producer instance with its own underlying
+			 *          SharedFIFO buffer for writing data.
              */
-            inline Producer(std::shared_ptr<SharedFIFO> buffer = std::make_shared<SharedFIFO>()) noexcept: m_buffer(std::move(buffer)) {};
+            inline Producer() noexcept: m_buffer(std::make_shared<SharedFIFO>()) {};
+
+			/**
+             * @brief Construct a Producer from a Consumer's buffer.
+             * @details Creates a new Producer instance sharing the same underlying
+			 *          SharedFIFO buffer as the provided Consumer.
+             */
+			inline Producer(const Consumer& consumer): m_buffer(consumer.m_buffer) {}
 
             /**
              * @brief Copy constructor.

@@ -210,6 +210,10 @@ namespace StormByte::Buffer {
              *
              * @par Multiple Invocations
              *          Each call creates new buffers; Async spawns threads, Sync reuses caller thread.
+             *          Executing Process more than once on the same Pipeline object while a previous
+             *          execution is still running is undefined behavior. Always wait until the prior
+             *          run has completed (e.g., the returned Consumer reaches EoF) before invoking
+             *          Process again on the same instance.
              *
              * @warning Async: Captured variables must remain valid for thread lifetime (use value capture/shared_ptr).
              *          Sync : Standard lifetimes apply.
