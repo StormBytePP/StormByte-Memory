@@ -4,6 +4,8 @@
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 
+#include <thread>
+
 /**
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
@@ -135,7 +137,7 @@ namespace StormByte::Buffer {
              * Creates a new `Pipeline` that shares the same underlying buffer as the original.
              * @param other Pipeline to copy
              */
-            Pipeline(const Pipeline& other) 						= default;
+            Pipeline(const Pipeline& other);
 
             /**
              * @brief Move constructor
@@ -147,14 +149,14 @@ namespace StormByte::Buffer {
             /**
              * @brief Destructor
              */
-            ~Pipeline() noexcept 									= default;
+            ~Pipeline() noexcept;
 
             /**
              * @brief Copy assignment operator
              * @param other `Pipeline` instance to copy from
              * @return Reference to the updated `Pipeline` instance
              */
-            Pipeline& operator=(const Pipeline& other)				= default;
+            Pipeline& operator=(const Pipeline& other);
 
             /**
              * @brief Move assignment operator
@@ -225,5 +227,12 @@ namespace StormByte::Buffer {
         private:
             std::vector<PipeFunction> m_pipes;						///< Vector of pipe functions
 			std::vector<Producer> m_producers;						///< Vector of intermediate consumers
+			std::vector<std::thread> m_threads;						///< Vector of threads for execution
+
+			/**
+			 * @brief Wait for all pipeline threads to complete.
+			 * @details Joins the last thread (if async mode) to ensure pipeline completion and clear threads for next run
+			 */
+			void 													WaitForCompletion();
     };
 }
